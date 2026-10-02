@@ -1,0 +1,49 @@
+<!--
+Evaluación de lexar_mcp (formato mcp-builder). Preguntas de sólo lectura,
+independientes, con respuesta única verificada contra la base (CCyCN + CPCCN
+de clarius/normas) y el modelo procesal/calendario del repo al 2026-10-02.
+Las preguntas 2, 5 y 10 dependen de data/calendario.yaml: si cambia el
+calendario cargado, hay que recalcularlas.
+-->
+<evaluation>
+  <qa_pair>
+    <question>En un proceso ordinario ante la Justicia Nacional, la demandada es una provincia. Según el artículo del CPCCN que rige la fase de contestación de demanda, ¿cuántos días tiene para contestar? Respondé sólo el número.</question>
+    <answer>60</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En la Provincia de Buenos Aires, una notificación electrónica quedó disponible el lunes 2026-10-05. El plazo es de 5 días hábiles. ¿Qué fecha (YYYY-MM-DD) vence el plazo, sin contar el plazo de gracia?</question>
+    <answer>2026-10-14</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>¿Qué número de artículo del Código Civil y Comercial fija en dos años el plazo de la locación con destino a vivienda permanente cuando las partes no establecieron uno?</question>
+    <answer>1198</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En un juicio ejecutivo nacional el ejecutado opuso excepciones admisibles. ¿Qué artículo del CPCCN ordena darle traslado al ejecutante? Respondé sólo el número.</question>
+    <answer>547</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En un juzgado civil nacional de CABA, una cédula electrónica quedó disponible el 2026-10-05 y el plazo es de 10 días hábiles. ¿En qué fecha (YYYY-MM-DD) vence?</question>
+    <answer>2026-10-20</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En un proceso sumarísimo nacional, ¿cuántos meses sin actos de impulso producen la caducidad de la instancia? Respondé sólo el número.</question>
+    <answer>3</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Un borrador cita: "art. 1113 del Código Civil, art. 1757 CCyCN y art. 3000 CCyCN". ¿Cuántas de esas citas apuntan a un artículo que no existe en el Código Civil y Comercial vigente? Respondé sólo el número.</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En el proceso ordinario nacional, clausurado el período de prueba, ¿cuántos días hábiles tienen las partes para alegar? Respondé sólo el número.</question>
+    <answer>6</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>¿Qué número de artículo del Código Civil y Comercial regula la responsabilidad por el hecho de las cosas y actividades riesgosas?</question>
+    <answer>1757</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>En la Justicia Nacional, una resolución que se notifica por ministerio legis se dictó el jueves 2026-12-24. ¿Qué fecha (YYYY-MM-DD) queda notificada?</question>
+    <answer>2026-12-28</answer>
+  </qa_pair>
+</evaluation>

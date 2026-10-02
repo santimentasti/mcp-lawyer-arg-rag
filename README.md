@@ -23,7 +23,7 @@ Para conectarlo a ChatGPT / Claude ver **[docs/sandbox.md](docs/sandbox.md)**.
 ## Estructura
 ```
 src/lexar/
-  server.py            # FastMCP: search/fetch (ChatGPT) + herramientas ar_*
+  server.py            # FastMCP: search/fetch (ChatGPT) + herramientas lexar_* (Pydantic, markdown|json, paginación)
   store.py             # SQLite + FTS5; artículos versionados (vigente_desde/hasta) + aristas modifica/deroga
   procesos.py          # motor de etapas (herencia nacion → caba/pba)
   plazos.py            # días hábiles judiciales, notificaciones, plazo de gracia

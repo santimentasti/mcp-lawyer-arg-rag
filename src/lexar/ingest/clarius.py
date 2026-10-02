@@ -184,6 +184,15 @@ def fetch(saij_id: str, tipo: str = "ley", timeout: float = 60) -> str:
     return r.text
 
 
+async def afetch(saij_id: str, tipo: str = "ley", timeout: float = 60) -> str:
+    """Versión async de :func:`fetch` (para el servidor)."""
+    url = RAW_URL.format(tipo=tipo, saij_id=saij_id)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        return r.text
+
+
 def to_norma(doc: Documento, norma_id: str, tipo: str, numero: str | None, nombre: str | None, jurisdiccion: str) -> Norma:
     saij = doc.meta.get("SAIJ")
     return Norma(

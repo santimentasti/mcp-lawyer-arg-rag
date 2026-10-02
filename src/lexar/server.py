@@ -1,123 +1,171 @@
 """lexar_mcp — servidor MCP de derecho argentino (Civil y Comercial) para ChatGPT y Claude.
 
-Transporte: Streamable HTTP *stateless* en ``/mcp`` (sirve igual para ChatGPT
-Developer Mode / Apps y para conectores custom de Claude) o stdio para Claude
-Desktop / Claude Code.
+Transporte: Streamable HTTP *stateless* en ``/mcp`` (ChatGPT Developer Mode /
+Apps y conectores custom de Claude) o stdio (Claude Desktop / Claude Code).
 
-Herramientas:
-- ``search`` / ``fetch``: contrato requerido por ChatGPT (deep research /
-  conectores). Indexan artículos y fases procesales.
-- ``ar_*``: herramientas ricas (artículos con versión temporal, etapas
-  procesales, próximo paso, cómputo de plazos, verificador de citas).
-Todas son de sólo lectura.
+Herramientas (todas de sólo lectura):
+- ``search`` / ``fetch``: contrato exigido por ChatGPT (deep research). Llevan
+  esos nombres exactos por requisito de la plataforma, sin prefijo.
+- ``lexar_*``: herramientas ricas con entrada Pydantic, salida markdown o JSON,
+  paginación y errores accionables.
+
+Recursos: ``lexar://articulo/{norma}/{numero}`` y ``lexar://proceso/{jurisdiccion}/{proceso}``.
 """
 
 from __future__ import annotations
 
-import os
+import asyncio
+import functools
+import logging
 import re
-from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Any, Awaitable, Callable, TypeVar
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from lexar import citas, plazos, procesos
+from lexar import citas, config, formato, plazos, procesos
 from lexar.ingest.clarius import es_derogado
+from lexar.schemas import (
+    BuscarNormativaInput,
+    CalcularVencimientoInput,
+    FetchOutput,
+    ListarProcesosInput,
+    ListarVersionesInput,
+    ObtenerArticuloInput,
+    ObtenerEtapasInput,
+    ObtenerReglasInput,
+    ObtenerSiguientePasoInput,
+    ResultadoBusqueda,
+    SearchOutput,
+    VerificarCitasInput,
+)
 from lexar.store import Articulo, Store
 
-DB_PATH = os.environ.get(
-    "LEXAR_DB",
-    "/tmp/lexar.db" if os.environ.get("VERCEL") else str(Path.cwd() / "data" / "lexar.db"),
-)
+log = logging.getLogger("lexar")  # FastMCP loguea a stderr: seguro para stdio
 
 INSTRUCCIONES = """\
 Conector de derecho argentino, Civil y Comercial (Nación/CABA y Provincia de Buenos Aires).
 Reglas de uso:
-1. Citá SIEMPRE el artículo con su id (p.ej. 'ccycn:1198') y transcribí el texto devuelto; nunca cites de memoria.
-2. Para saber en qué etapa está un expediente y qué sigue: ar_etapas_proceso → ar_siguiente_paso.
-3. Para vencimientos usá ar_calcular_vencimiento y mostrá las advertencias y días salteados al usuario.
-4. Antes de entregar un escrito, pasá el borrador por ar_verificar_citas.
-5. Si una regla dice verificar=true, decilo explícitamente: es información pendiente de control contra la fuente.
+1. Citá SIEMPRE el artículo con su id (p.ej. 'ccycn:1198') y el texto devuelto por las herramientas; nunca cites de memoria.
+2. Para ubicar un expediente: lexar_listar_procesos → lexar_obtener_etapas_proceso → lexar_obtener_siguiente_paso.
+3. Para vencimientos usá lexar_calcular_vencimiento y mostrale al usuario los días salteados y las advertencias.
+4. Antes de entregar un escrito, pasá el borrador por lexar_verificar_citas.
+5. Lo marcado 'verificar' está pendiente de control contra la fuente oficial: decilo explícitamente.
 Las respuestas son orientativas y no reemplazan el criterio profesional del abogado."""
 
 mcp = FastMCP(
-    "lexar_mcp",
+    config.SERVER_NAME,
     instructions=INSTRUCCIONES,
     stateless_http=True,
     json_response=True,
-    host=os.environ.get("HOST", "0.0.0.0"),
-    port=int(os.environ.get("PORT", "8000")),
+    host=config.HOST,
+    port=config.PORT,
 )
 
-RO = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
-Jurisdiccion = Annotated[
-    Literal["nacion", "caba", "pba"],
-    Field(description="'nacion' (Justicia Nacional/Federal, CPCCN), 'caba' (juicios civiles/comerciales de CABA: tramitan ante la Justicia Nacional) o 'pba' (Provincia de Buenos Aires, CPCC PBA)"),
-]
+T = TypeVar("T")
+
+# ---------------------------------------------------------------- store (carga lazy y async)
 
 _store: Store | None = None
+_store_lock = asyncio.Lock()
 
 
-def store() -> Store:
-    """Abre la base; si no existe y LEXAR_AUTO_INGEST != '0', la construye
-    (útil en serverless: Vercel sólo permite escribir en /tmp)."""
+async def get_store() -> Store:
+    """Abre la base; si no existe y LEXAR_AUTO_INGEST != '0', la construye (serverless: /tmp)."""
     global _store
-    if _store is None:
-        if not Path(DB_PATH).exists():
-            if os.environ.get("LEXAR_AUTO_INGEST", "1") == "0":
-                raise RuntimeError(f"No existe la base {DB_PATH}. Ejecutá `lexar-ingest` primero.")
-            from lexar.ingest.cli import ingest
+    if _store is not None:
+        return _store
+    async with _store_lock:
+        if _store is None:
+            path = Path(config.DB_PATH)
+            if not path.exists():
+                if not config.AUTO_INGEST:
+                    raise ToolError("La base normativa no está inicializada. El administrador debe ejecutar `lexar-ingest`.")
+                from lexar.ingest.cli import aingest
 
-            Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-            tmp = f"{DB_PATH}.{os.getpid()}.tmp"
-            ingest(Store(tmp))
-            os.replace(tmp, DB_PATH)
-        _store = Store(DB_PATH)
+                log.info("Construyendo la base normativa en %s", path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".tmp")
+                tmp.unlink(missing_ok=True)
+                await aingest(Store(tmp))
+                tmp.replace(path)
+            _store = Store(path)
     return _store
+
+
+# ---------------------------------------------------------------- errores
+
+class LexarError(Exception):
+    """Error esperable con un mensaje accionable para el modelo."""
+
+
+def manejar_errores(fn: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+    """Traduce errores a mensajes accionables, sin filtrar detalles internos."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> T:
+        try:
+            return await fn(*args, **kwargs)
+        except ToolError:
+            raise
+        except (LexarError, KeyError, ValueError) as e:
+            raise ToolError(f"Error: {e.args[0] if e.args else e}") from e
+        except Exception as e:  # noqa: BLE001
+            log.exception("Error inesperado en %s", fn.__name__)
+            raise ToolError(f"Error interno inesperado ({type(e).__name__}). Reintentá; si persiste, reportalo.") from e
+
+    return wrapper
+
+
+def _anotaciones(titulo: str) -> dict:
+    # openWorldHint=False: sólo consulta la base local de normas y el modelo procesal.
+    return {"title": titulo, "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
 
 
 # ---------------------------------------------------------------- helpers
 
-def _url_articulo(a: Articulo) -> str:
-    n = store().get_norma(a.norma_id)
-    base = (n.fuente_url if n and n.fuente_url else "").rstrip("/")
-    return base or f"lexar://{a.id}"
-
-
-def _art_dict(a: Articulo, extracto: bool = False) -> dict:
-    n = store().get_norma(a.norma_id)
+def _art_dict(s: Store, a: Articulo, extracto: bool = False) -> dict:
+    n = s.get_norma(a.norma_id)
+    texto = a.texto[:400] + " …" if extracto and len(a.texto) > 400 else a.texto
     return {
         "id": a.id,
         "norma": n.nombre if n else a.norma_id,
         "articulo": a.numero,
         "epigrafe": a.epigrafe,
         "ubicacion": a.ubicacion,
-        "texto": a.texto[:400] + " …" if extracto and len(a.texto) > 400 else a.texto,
+        "texto": texto,
         "estado": "derogado" if es_derogado(a.texto) else ("vigente" if a.vigente_hasta is None else "histórico"),
         "vigente_desde": a.vigente_desde,
         "vigente_hasta": a.vigente_hasta,
         "modificado_por": a.modificado_por,
-        "fuente": _url_articulo(a),
+        "fuente": (n.fuente_url if n and n.fuente_url else f"lexar://articulo/{a.norma_id}/{a.numero}"),
     }
 
 
-_CITA_NORMA = re.compile(r"\b(CPCCN|CCyCN|LCQ)\s+arts?\.\s*(\d+)", re.IGNORECASE)
+def _paginar(items: list, total: int, offset: int) -> dict:
+    count = len(items)
+    has_more = offset + count < total
+    return {"total": total, "count": count, "offset": offset, "has_more": has_more,
+            "next_offset": offset + count if has_more else None}
 
 
-def _textos_citados(*textos: str | None, max_n: int = 3) -> list[dict]:
-    """Adjunta el texto de los artículos citados en una fase (CPCCN/CCyCN)."""
+_CITA_NORMA = re.compile(r"\b(CPCCN|CCyCN)\s+arts?\.\s*(\d+)", re.IGNORECASE)
+
+
+def _textos_citados(s: Store, *textos: str | None, max_n: int = 3) -> list[dict]:
+    """Adjunta el texto oficial de los artículos que cita una fase procesal."""
     out, vistos = [], set()
     for t in textos:
         for cod, num in _CITA_NORMA.findall(t or ""):
-            nid = cod.lower()
-            if (nid, num) in vistos or nid not in ("cpccn", "ccycn"):
+            key = (cod.lower(), num)
+            if key in vistos:
                 continue
-            vistos.add((nid, num))
-            a = store().get_articulo(nid, num)
+            vistos.add(key)
+            a = s.get_articulo(*key)
             if a:
                 out.append({"id": a.id, "epigrafe": a.epigrafe, "texto": a.texto[:900]})
             if len(out) >= max_n:
@@ -125,210 +173,325 @@ def _textos_citados(*textos: str | None, max_n: int = 3) -> list[dict]:
     return out
 
 
-def _fase_doc_id(jur: str, proceso: str, fase: str) -> str:
-    return f"proceso:{jur}:{proceso}:{fase}"
+def _fase_textos(s: Store, jurisdiccion: str, f: dict) -> list[dict]:
+    if jurisdiccion == "pba":
+        return []
+    arts = f.get("articulos")
+    return _textos_citados(s, str((f.get("plazo") or {}).get("norma", "")), arts and f"CPCCN art. {arts}")
 
 
-def _buscar_fases(query: str, limit: int) -> list[dict]:
-    toks = [t for t in re.findall(r"\w+", query.lower()) if len(t) > 3]
+def _buscar_fases(query: str, limit: int) -> list[ResultadoBusqueda]:
+    toks = [t[:6] for t in re.findall(r"\w+", query.lower()) if len(t) > 3]
     if not toks:
         return []
     hits = []
-    for jur in procesos.JURISDICCIONES:
-        if jur == "caba":
-            continue  # idéntico a nación en Civil y Comercial
+    for jur in ("nacion", "pba"):  # caba = nacion en Civil y Comercial
         for pid, p in procesos.modelo(jur)["procesos"].items():
             for f in p.get("fases", []):
                 blob = " ".join(str(x) for x in (p.get("nombre"), f.get("nombre"), f.get("notas"), f.get("plazo"))).lower()
-                score = sum(blob.count(t[:6]) for t in toks)
+                score = sum(blob.count(t) for t in toks)
                 if score:
                     hits.append((score, jur, pid, p, f))
     hits.sort(key=lambda h: -h[0])
     return [
-        {"id": _fase_doc_id(j, pid, f["id"]), "title": f"[{j.upper()}] {p.get('nombre')} — {f.get('nombre')}",
-         "url": f"lexar://{_fase_doc_id(j, pid, f['id'])}"}
+        ResultadoBusqueda(id=f"proceso:{j}:{pid}:{f['id']}", title=f"[{j.upper()}] {p.get('nombre')} — {f.get('nombre')}",
+                          url=f"lexar://proceso/{j}/{pid}#{f['id']}")
         for _, j, pid, p, f in hits[:limit]
     ]
 
 
-# ---------------------------------------------------------------- ChatGPT search/fetch
+# ================================================================ ChatGPT: search / fetch
 
-@mcp.tool(annotations={"title": "Buscar (artículos y etapas procesales)", **RO})
-def search(query: Annotated[str, Field(description="Consulta en lenguaje natural o cita, p.ej. 'plazo locación vivienda' o 'contestación de demanda'")]) -> dict:
-    """Busca en el Código Civil y Comercial, el CPCCN y el modelo de etapas procesales.
+@mcp.tool(name="search", annotations=_anotaciones("Buscar artículos y etapas procesales"))
+@manejar_errores
+async def search(
+    query: str = Field(..., min_length=2, max_length=300, description="Consulta en lenguaje natural o cita. Ej.: 'plazo para contestar la demanda'"),
+) -> SearchOutput:
+    """Busca en el Código Civil y Comercial, el CPCCN y el modelo de etapas procesales (contrato `search` de ChatGPT).
 
-    Devuelve {results: [{id, title, url}]}. Usá `fetch` con el id para leer el documento completo.
+    Returns:
+        {"results": [{"id": str, "title": str, "url": str}]}. Ids: '<norma>:<articulo>' (ej. 'ccycn:1198')
+        o 'proceso:<jurisdiccion>:<proceso>:<fase>'. Pasá el id a `fetch` para leer el documento.
     """
-    s = store()
-    results = []
+    s = await get_store()
+    res = []
     for h in s.buscar(query, limit=8):
         a = h.articulo
         n = s.get_norma(a.norma_id)
         title = f"{n.nombre if n else a.norma_id} — Art. {a.numero}" + (f" ({a.epigrafe})" if a.epigrafe else "")
-        results.append({"id": a.id, "title": title, "url": _url_articulo(a)})
-    results.extend(_buscar_fases(query, limit=4))
-    return {"results": results}
+        res.append(ResultadoBusqueda(id=a.id, title=title, url=_art_dict(s, a)["fuente"]))
+    return SearchOutput(results=res + _buscar_fases(query, limit=4))
 
 
-@mcp.tool(annotations={"title": "Leer documento por id", **RO})
-def fetch(id: Annotated[str, Field(description="id devuelto por `search`, p.ej. 'ccycn:1198' o 'proceso:nacion:ordinario:contestacion'")]) -> dict:
-    """Devuelve el texto completo de un artículo o de una fase procesal: {id, title, text, url, metadata}."""
-    if id.startswith("proceso:"):
-        try:
-            _, jur, pid, fid = id.split(":", 3)
-            d = procesos.siguientes(jur, pid, fid)
-        except (ValueError, KeyError) as e:
-            raise ValueError(f"id de fase inválido '{id}': {e}") from e
-        f = d["fase_actual"]
-        lines = [f"# {f.get('nombre')} ({jur.upper()} — {pid})"]
-        for k in ("articulos", "actor", "plazo", "escritos", "notas", "ramas", "siguiente"):
-            if f.get(k):
-                lines.append(f"**{k}**: {f[k]}")
-        lines.append(f"**próximos pasos**: {d['proximos_pasos']}")
-        for t in _textos_citados(str(f.get("plazo")), f.get("articulos") and f"CPCCN art. {f['articulos']}"):
-            lines.append(f"\n> {t['id']} — {t['texto']}")
-        return {"id": id, "title": lines[0][2:], "text": "\n".join(lines), "url": f"lexar://{id}", "metadata": {"tipo": "fase_procesal", "verificar": bool(f.get("verificar"))}}
-    norma, _, num = id.partition(":")
-    a = store().get_articulo(norma, num)
-    if a is None:
-        raise ValueError(f"No existe '{id}'. Formato: '<norma>:<articulo>' (normas: {', '.join(n.id for n in store().list_normas())}).")
-    d = _art_dict(a)
-    return {"id": a.id, "title": f"{d['norma']} — Art. {a.numero}", "text": a.texto, "url": d["fuente"],
-            "metadata": {k: d[k] for k in ("epigrafe", "ubicacion", "estado", "vigente_desde", "modificado_por")}}
+@mcp.tool(name="fetch", annotations=_anotaciones("Leer documento por id"))
+@manejar_errores
+async def fetch(
+    id: str = Field(..., min_length=3, max_length=120, description="id devuelto por `search`, ej. 'ccycn:1198' o 'proceso:nacion:ordinario:contestacion'"),
+) -> FetchOutput:
+    """Devuelve el texto completo de un artículo o de una fase procesal (contrato `fetch` de ChatGPT).
 
-
-# ---------------------------------------------------------------- normativa
-
-@mcp.tool(annotations={"title": "Buscar normativa", **RO})
-def ar_buscar_normativa(
-    consulta: Annotated[str, Field(description="Términos de búsqueda (insensible a tildes)", min_length=2)],
-    norma: Annotated[str | None, Field(description="Filtrar por norma: 'ccycn' o 'cpccn'")] = None,
-    limite: Annotated[int, Field(ge=1, le=25)] = 8,
-) -> dict:
-    """Búsqueda léxica (BM25) sobre los artículos vigentes. Devuelve extractos con id para citar."""
-    hits = store().buscar(consulta, norma_id=norma, limit=limite)
-    return {"resultados": [{**_art_dict(h.articulo, extracto=True), "relevancia": round(h.score, 2), "fragmento": h.snippet} for h in hits]}
-
-
-@mcp.tool(annotations={"title": "Obtener artículo (con versión a una fecha)", **RO})
-def ar_obtener_articulo(
-    norma: Annotated[str, Field(description="'ccycn' (Código Civil y Comercial) o 'cpccn' (Código Procesal Civil y Comercial de la Nación)")],
-    articulo: Annotated[str, Field(description="Número: '1198', '1221 bis', 'art. 1.198'")],
-    fecha: Annotated[date | None, Field(description="Opcional: devuelve el texto vigente a esa fecha (YYYY-MM-DD)")] = None,
-) -> dict:
-    """Texto oficial de un artículo, con ubicación, estado (vigente/derogado) y fuente SAIJ."""
-    a = store().get_articulo(norma, articulo, fecha)
-    if a is None:
-        raise ValueError(f"No se encontró {norma} art. {articulo}" + (f" vigente al {fecha}" if fecha else "") + ". Probá ar_buscar_normativa.")
-    return _art_dict(a)
-
-
-@mcp.tool(annotations={"title": "Historial de versiones de un artículo", **RO})
-def ar_historial_articulo(
-    norma: Annotated[str, Field(description="'ccycn' o 'cpccn'")],
-    articulo: Annotated[str, Field(description="Número de artículo")],
-) -> dict:
-    """Todas las versiones conocidas del artículo y las normas que lo modificaron."""
-    vs = store().historial(norma, articulo)
-    if not vs:
-        raise ValueError(f"No hay registros de {norma} art. {articulo}.")
-    return {"versiones": [_art_dict(v) for v in vs], "relaciones": store().relaciones_de(f"{norma}:{vs[0].numero}")}
-
-
-@mcp.tool(annotations={"title": "Verificar citas normativas de un escrito", **RO})
-def ar_verificar_citas(
-    texto: Annotated[str, Field(description="Borrador de escrito o párrafo con citas (p.ej. 'conforme art. 1198 CCyCN y arts. 338 y 356 CPCCN')", min_length=5, max_length=60000)],
-) -> dict:
-    """Detecta citas a artículos (CCyCN, CPCCN, Código Civil derogado) y verifica que existan y estén vigentes.
-
-    Estados: OK, NO_ENCONTRADO (posible alucinación), DEROGADO, NORMA_DEROGADA.
+    Returns:
+        {"id", "title", "text", "url", "metadata"}. En fases procesales, `text` incluye el plazo, los
+        próximos pasos y el texto de los artículos citados.
     """
-    return citas.verificar(store(), texto)
+    s = await get_store()
+    if id.startswith("proceso:"):
+        partes = id.split(":")
+        if len(partes) != 4:
+            raise LexarError(f"id de fase inválido '{id}'. Formato: 'proceso:<jurisdiccion>:<proceso>:<fase>'.")
+        _, jur, pid, fid = partes
+        d = procesos.siguientes(jur, pid, fid)
+        d["texto_normativo"] = _fase_textos(s, jur, d["fase_actual"])
+        return FetchOutput(id=id, title=f"[{jur.upper()}] {pid} — {d['fase_actual'].get('nombre')}",
+                           text=formato.truncar(formato.md_siguiente(d)), url=f"lexar://proceso/{jur}/{pid}#{fid}",
+                           metadata={"tipo": "fase_procesal", "verificar": bool(d["fase_actual"].get("verificar"))})
+    norma, _, num = id.partition(":")
+    a = s.get_articulo(norma, num) if num else None
+    if a is None:
+        raise LexarError(f"No existe '{id}'. Formato: '<norma>:<articulo>', normas: {', '.join(n.id for n in s.list_normas())}. Usá `search` para encontrar ids.")
+    d = _art_dict(s, a)
+    return FetchOutput(id=a.id, title=f"{d['norma']} — Art. {a.numero}", text=a.texto, url=d["fuente"],
+                       metadata={k: d[k] for k in ("epigrafe", "ubicacion", "estado", "vigente_desde", "modificado_por")})
 
 
-# ---------------------------------------------------------------- procesos
+# ================================================================ normativa
 
-@mcp.tool(annotations={"title": "Listar tipos de proceso", **RO})
-def ar_listar_procesos(jurisdiccion: Jurisdiccion) -> dict:
-    """Tipos de proceso civil y comercial modelados (ordinario, sumarísimo, ejecutivo, sucesiones, concursos, cautelares, etc.)."""
-    return {"jurisdiccion": jurisdiccion, "procesos": procesos.listar_procesos(jurisdiccion)}
+@mcp.tool(name="lexar_buscar_normativa", annotations=_anotaciones("Buscar normativa"))
+@manejar_errores
+async def lexar_buscar_normativa(params: BuscarNormativaInput) -> str:
+    """Búsqueda léxica (BM25, insensible a tildes) sobre los artículos VIGENTES del CCyCN y el CPCCN.
 
+    Usar cuando: se busca qué artículo regula un tema ("plazo de la locación", "daño punitivo").
+    No usar cuando: ya se conoce el número de artículo (usar lexar_obtener_articulo) o se necesita
+    la etapa procesal (usar lexar_obtener_etapas_proceso).
 
-@mcp.tool(annotations={"title": "Etapas de un proceso", **RO})
-def ar_etapas_proceso(
-    jurisdiccion: Jurisdiccion,
-    proceso: Annotated[str, Field(description="id de ar_listar_procesos, p.ej. 'ordinario', 'juicio_ejecutivo', 'sucesion_ab_intestato'")],
-) -> dict:
-    """Todas las fases de un proceso en orden, con artículos, plazos, actor, escritos típicos y ramas."""
-    try:
-        p = procesos.get_proceso(jurisdiccion, proceso)
-    except KeyError as e:
-        raise ValueError(str(e)) from e
-    return {"jurisdiccion": jurisdiccion, "proceso": proceso, **p}
+    Args:
+        params: consulta (str), norma ('ccycn'|'cpccn'|None), limite (1-50, def. 10), offset (>=0), formato.
 
-
-@mcp.tool(annotations={"title": "Próximo paso procesal", **RO})
-def ar_siguiente_paso(
-    jurisdiccion: Jurisdiccion,
-    proceso: Annotated[str, Field(description="id del proceso, p.ej. 'ordinario'")],
-    fase_actual: Annotated[str, Field(description="id de la fase en que está el expediente, p.ej. 'contestacion' (ver ar_etapas_proceso)")],
-) -> dict:
-    """Dada la fase actual de un expediente: qué se hace ahora, plazo y norma, próximos pasos, ramas y caducidad, con el texto de los artículos citados."""
-    try:
-        d = procesos.siguientes(jurisdiccion, proceso, fase_actual)
-    except KeyError as e:
-        raise ValueError(str(e)) from e
-    f = d["fase_actual"]
-    d["texto_normativo"] = _textos_citados(str(f.get("plazo")), f.get("articulos") and f"CPCCN art. {f['articulos']}") if jurisdiccion != "pba" else []
-    if jurisdiccion == "pba":
-        d["nota"] = "Los textos del CPCC PBA todavía no están cargados: verificar la numeración en normas.gba.gob.ar."
-    return d
+    Returns:
+        markdown con resultados, o JSON:
+        {"consulta": str, "total": int, "count": int, "offset": int, "has_more": bool, "next_offset": int|null,
+         "resultados": [{"id": "ccycn:1198", "norma": str, "articulo": str, "epigrafe": str|null,
+                         "ubicacion": str|null, "texto": str (extracto), "estado": "vigente"|"derogado",
+                         "fragmento": str, "relevancia": float, "fuente": url}]}
+        Sin resultados: total=0 y un mensaje con sugerencias.
+    """
+    s = await get_store()
+    hits = s.buscar(params.consulta, norma_id=params.norma, limit=params.limite, offset=params.offset)
+    total = s.contar(params.consulta, params.norma)
+    data = {
+        "consulta": params.consulta,
+        **_paginar(hits, total, params.offset),
+        "resultados": [{**_art_dict(s, h.articulo, extracto=True), "fragmento": h.snippet, "relevancia": round(h.score, 2)} for h in hits],
+    }
+    return formato.responder(data, params.formato, formato.md_busqueda)
 
 
-@mcp.tool(annotations={"title": "Reglas procesales generales", **RO})
-def ar_reglas_procesales(jurisdiccion: Jurisdiccion) -> dict:
-    """Reglas transversales: cómputo de plazos, plazo de gracia, notificaciones, caducidad, rebeldía, modos anormales de terminación y práctica (sistemas, mesa de entradas, cédulas)."""
-    return procesos.reglas_generales(jurisdiccion)
+@mcp.tool(name="lexar_obtener_articulo", annotations=_anotaciones("Obtener artículo"))
+@manejar_errores
+async def lexar_obtener_articulo(params: ObtenerArticuloInput) -> str:
+    """Texto oficial de un artículo (vigente, o el vigente a una fecha), con ubicación, estado y fuente SAIJ.
+
+    Usar cuando: se conoce la norma y el número ("art. 1198 CCyCN") o hay que transcribir el texto exacto.
+    Con `fecha`, devuelve la versión aplicable a ese momento (p.ej. la fecha de firma de un contrato).
+
+    Returns:
+        markdown, o JSON {"id", "norma", "articulo", "epigrafe", "ubicacion", "texto", "estado",
+        "vigente_desde", "vigente_hasta", "modificado_por", "fuente"}.
+        Error si no existe: sugiere usar lexar_buscar_normativa.
+    """
+    s = await get_store()
+    a = s.get_articulo(params.norma, params.articulo, params.fecha)
+    if a is None:
+        raise LexarError(
+            f"No se encontró {params.norma} art. {params.articulo}"
+            + (f" vigente al {params.fecha}" if params.fecha else "")
+            + ". Verificá el número o usá lexar_buscar_normativa con palabras clave."
+        )
+    return formato.responder(_art_dict(s, a), params.formato, formato.md_articulo)
 
 
-@mcp.tool(annotations={"title": "Calcular vencimiento de plazo", **RO})
-def ar_calcular_vencimiento(
-    jurisdiccion: Jurisdiccion,
-    fecha: Annotated[date, Field(description="Fecha de la notificación (cédula/personal), del día en que quedó disponible la notificación electrónica, o de la resolución si es ministerio legis (YYYY-MM-DD)")],
-    dias: Annotated[int, Field(ge=1, le=365, description="Cantidad de días del plazo, p.ej. 15 para contestar demanda en ordinario")],
-    modo_notificacion: Annotated[Literal["electronica", "ministerio_legis", "cedula", "personal"], Field(description="Cómo se notificó")] = "electronica",
-    tipo: Annotated[Literal["habiles", "corridos"], Field(description="'habiles' (regla procesal) o 'corridos' (p.ej. mediación)")] = "habiles",
-) -> dict:
-    """Calcula el vencimiento en días hábiles judiciales: excluye fines de semana, feriados y ferias, aplica el perfeccionamiento de la notificación según la jurisdicción e informa el plazo de gracia. Devuelve los días salteados, las reglas aplicadas y advertencias."""
-    return plazos.calcular_vencimiento(jurisdiccion, fecha, dias, modo_notificacion, tipo).to_dict()
+@mcp.tool(name="lexar_listar_versiones_articulo", annotations=_anotaciones("Listar versiones de un artículo"))
+@manejar_errores
+async def lexar_listar_versiones_articulo(params: ListarVersionesInput) -> str:
+    """Todas las versiones conocidas de un artículo, con vigencia y norma modificatoria.
+
+    Usar cuando: se pregunta si un artículo fue reformado, desde cuándo rige el texto actual o qué
+    decía antes de una reforma.
+
+    Returns:
+        markdown, o JSON {"norma": str, "articulo": str, "versiones": [<artículo>...],
+        "relaciones": [{"origen", "tipo", "destino", "fecha", "nota"}]}.
+    """
+    s = await get_store()
+    vs = s.historial(params.norma, params.articulo)
+    if not vs:
+        raise LexarError(f"No hay registros de {params.norma} art. {params.articulo}. Usá lexar_buscar_normativa.")
+    data = {"norma": params.norma, "articulo": vs[0].numero, "versiones": [_art_dict(s, v) for v in vs],
+            "relaciones": s.relaciones_de(f"{params.norma}:{vs[0].numero}")}
+    return formato.responder(data, params.formato, formato.md_versiones)
 
 
-# ---------------------------------------------------------------- prompts
+@mcp.tool(name="lexar_verificar_citas", annotations=_anotaciones("Verificar citas normativas"))
+@manejar_errores
+async def lexar_verificar_citas(params: VerificarCitasInput) -> str:
+    """Detecta las citas a artículos de un texto y verifica que existan y estén vigentes (anti-alucinación).
 
-@mcp.prompt(title="Analizar el estado de un expediente")
+    Reconoce "art. 1198 del CCyCN", "arts. 338 y 356 CPCCN", "arts. 59 a 61 del CPCCN",
+    "CPCCN, art. 124" y citas al Código Civil / Código de Comercio derogados.
+    Usar cuando: antes de entregar o presentar un escrito redactado con IA.
+    No verifica jurisprudencia ni que el artículo respalde lo afirmado (leer el extracto).
+
+    Returns:
+        markdown (tabla), o JSON {"citas_detectadas": int,
+        "resumen": {"OK", "NO_ENCONTRADO", "DEROGADO", "NORMA_DEROGADA"},
+        "resultados": [{"cita", "norma", "articulo", "estado", "epigrafe"|"detalle", "extracto"?, "id"?}],
+        "limitaciones": str}
+    """
+    s = await get_store()
+    return formato.responder(citas.verificar(s, params.texto), params.formato, formato.md_citas)
+
+
+# ================================================================ procesos
+
+@mcp.tool(name="lexar_listar_procesos", annotations=_anotaciones("Listar tipos de proceso"))
+@manejar_errores
+async def lexar_listar_procesos(params: ListarProcesosInput) -> str:
+    """Tipos de proceso civil y comercial modelados en una jurisdicción.
+
+    Incluye ordinario, sumarísimo, juicio ejecutivo, ejecución de sentencia, cautelares, beneficio de litigar
+    sin gastos, diligencias preliminares, prueba anticipada, desalojo, interdictos, división de condominio,
+    sucesiones, concurso preventivo, quiebra y mediación prejudicial (PBA agrega 'sumario').
+    Usar como primer paso para obtener el id de un proceso.
+
+    Returns:
+        markdown (tabla), o JSON {"jurisdiccion", "total", "count", "offset", "has_more", "next_offset",
+        "procesos": [{"id", "nombre", "norma", "ambito", "mediacion", "fases": int}]}
+    """
+    todos = procesos.listar_procesos(params.jurisdiccion)
+    page = todos[params.offset : params.offset + params.limite]
+    data = {"jurisdiccion": params.jurisdiccion, **_paginar(page, len(todos), params.offset), "procesos": page}
+    return formato.responder(data, params.formato, formato.md_procesos)
+
+
+@mcp.tool(name="lexar_obtener_etapas_proceso", annotations=_anotaciones("Obtener etapas de un proceso"))
+@manejar_errores
+async def lexar_obtener_etapas_proceso(params: ObtenerEtapasInput) -> str:
+    """Todas las fases de un proceso en orden: artículos, plazo, quién actúa, escritos típicos y ramas
+    (rebeldía, allanamiento, excepciones, reconvención…).
+
+    Usar cuando: hay que explicar cómo se tramita un proceso o ubicar en qué fase está un expediente.
+    Después, con el id de la fase, usar lexar_obtener_siguiente_paso.
+
+    Returns:
+        markdown, o JSON {"jurisdiccion", "proceso", "nombre", "norma", "ambito", "mediacion", "caducidad",
+        "fases": [{"id", "nombre", "articulos", "actor", "plazo": {"dias", "tipo", "desde", "norma",
+        "verificar"?}, "escritos", "notas", "siguiente", "ramas": [{"si", "ir_a", "norma"}], "verificar"?}]}
+    """
+    p = procesos.get_proceso(params.jurisdiccion, params.proceso)
+    data = {"jurisdiccion": params.jurisdiccion, "proceso": params.proceso, **p}
+    return formato.responder(data, params.formato, formato.md_etapas)
+
+
+@mcp.tool(name="lexar_obtener_siguiente_paso", annotations=_anotaciones("Obtener el próximo paso procesal"))
+@manejar_errores
+async def lexar_obtener_siguiente_paso(params: ObtenerSiguientePasoInput) -> str:
+    """Dada la fase actual de un expediente: qué corresponde hacer, el plazo y su norma, los próximos pasos,
+    las ramas posibles, el riesgo de caducidad y el texto oficial de los artículos citados.
+
+    Usar cuando: "contestaron la demanda, ¿qué sigue?", "¿qué plazo tengo para…?".
+    Si se conoce la fecha de notificación, completar con lexar_calcular_vencimiento.
+
+    Returns:
+        markdown, o JSON {"proceso", "fase_actual": {...fase}, "proximos_pasos": [{"id", "nombre", "plazo"?, "actor"?}],
+        "ramas_posibles": [...], "caducidad": str|null, "texto_normativo": [{"id", "epigrafe", "texto"}], "nota"?}
+    """
+    s = await get_store()
+    d = procesos.siguientes(params.jurisdiccion, params.proceso, params.fase_actual)
+    d["texto_normativo"] = _fase_textos(s, params.jurisdiccion, d["fase_actual"])
+    if params.jurisdiccion == "pba":
+        d["nota"] = "El texto del CPCC PBA todavía no está cargado: verificar la numeración en normas.gba.gob.ar."
+    return formato.responder(d, params.formato, formato.md_siguiente)
+
+
+@mcp.tool(name="lexar_obtener_reglas_procesales", annotations=_anotaciones("Obtener reglas procesales generales"))
+@manejar_errores
+async def lexar_obtener_reglas_procesales(params: ObtenerReglasInput) -> str:
+    """Reglas transversales de la jurisdicción: cómputo de plazos, plazo de gracia, notificaciones (ministerio
+    legis, cédula, electrónica), caducidad de instancia, rebeldía, modos anormales de terminación y práctica
+    (mesa de entradas, Lex100/MEV/Augusta, cédulas, oficios, tasas).
+
+    Returns:
+        markdown, o JSON {"jurisdiccion", "codigo", "nota", "reglas": [{"tema", "regla", "norma", "verificar"?}],
+        "modos_anormales_de_terminacion": [{"id", "norma", "nota"}], "practica": {str: str}}
+    """
+    return formato.responder(procesos.reglas_generales(params.jurisdiccion), params.formato, formato.md_reglas)
+
+
+@mcp.tool(name="lexar_calcular_vencimiento", annotations=_anotaciones("Calcular vencimiento de un plazo procesal"))
+@manejar_errores
+async def lexar_calcular_vencimiento(params: CalcularVencimientoInput) -> str:
+    """Calcula el vencimiento de un plazo en días hábiles judiciales: perfecciona la notificación según la
+    jurisdicción (electrónica, ministerio legis martes/viernes, cédula), excluye fines de semana, feriados
+    y ferias, e informa el plazo de gracia (CPCCN art. 124: 2 horas; PBA: 4 horas).
+
+    Usar cuando: hay una fecha de notificación y una cantidad de días. Obtener los días con
+    lexar_obtener_siguiente_paso si no se conocen.
+
+    Returns:
+        markdown, o JSON {"jurisdiccion", "fecha_acto_o_disponibilidad", "modo_notificacion",
+        "notificacion_perfeccionada", "plazo", "primer_dia_del_plazo", "vencimiento", "plazo_de_gracia",
+        "dias_inhabiles_salteados": [{"fecha", "motivo", "verificar"}], "reglas_aplicadas": [str],
+        "advertencias": [str]}. Mostrar SIEMPRE las advertencias al usuario.
+    """
+    r = plazos.calcular_vencimiento(params.jurisdiccion, params.fecha, params.dias, params.modo_notificacion, params.tipo)
+    return formato.responder(r.to_dict(), params.formato, formato.md_vencimiento)
+
+
+# ================================================================ recursos y prompts
+
+@mcp.resource("lexar://articulo/{norma}/{numero}", name="articulo", mime_type="text/markdown",
+              description="Texto oficial vigente de un artículo, ej. lexar://articulo/ccycn/1198")
+async def recurso_articulo(norma: str, numero: str) -> str:
+    s = await get_store()
+    a = s.get_articulo(norma, numero)
+    if a is None:
+        raise ValueError(f"No existe {norma}:{numero}")
+    return formato.md_articulo(_art_dict(s, a))
+
+
+@mcp.resource("lexar://proceso/{jurisdiccion}/{proceso}", name="proceso", mime_type="text/markdown",
+              description="Mapa de etapas de un proceso, ej. lexar://proceso/nacion/ordinario")
+async def recurso_proceso(jurisdiccion: str, proceso: str) -> str:
+    p = procesos.get_proceso(jurisdiccion, proceso)
+    return formato.md_etapas({"jurisdiccion": jurisdiccion, "proceso": proceso, **p})
+
+
+@mcp.prompt(name="analizar_expediente", title="Analizar el estado de un expediente")
 def analizar_expediente(jurisdiccion: str, proceso: str, descripcion: str) -> str:
     """Guía al modelo para ubicar la etapa, el próximo acto y su vencimiento."""
     return (
         f"Jurisdicción: {jurisdiccion}. Tipo de proceso: {proceso}.\n"
         f"Situación del expediente: {descripcion}\n\n"
-        "1) Con ar_etapas_proceso identificá la fase actual. 2) Con ar_siguiente_paso obtené el próximo acto, el plazo y la norma. "
-        "3) Si hay una notificación con fecha, calculá el vencimiento con ar_calcular_vencimiento. "
-        "4) Respondé con: etapa actual, próximo acto, quién lo realiza, vencimiento (con días salteados y advertencias), "
-        "riesgos (rebeldía, caducidad, negligencia probatoria) y artículos citados con su id."
+        "1) Con lexar_obtener_etapas_proceso identificá la fase actual. 2) Con lexar_obtener_siguiente_paso obtené "
+        "el próximo acto, el plazo y la norma. 3) Si hay una fecha de notificación, calculá el vencimiento con "
+        "lexar_calcular_vencimiento. 4) Respondé con: etapa actual, próximo acto, quién lo realiza, vencimiento "
+        "(con días salteados y advertencias), riesgos (rebeldía, caducidad, negligencia probatoria) y artículos "
+        "citados con su id."
     )
 
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> JSONResponse:
     try:
-        return JSONResponse({"ok": True, **store().stats()})
+        return JSONResponse({"ok": True, "server": config.SERVER_NAME, **(await get_store()).stats()})
     except Exception as e:  # noqa: BLE001
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=503)
+        log.exception("health")
+        return JSONResponse({"ok": False, "error": type(e).__name__}, status_code=503)
 
 
 def main() -> None:
-    transport = os.environ.get("MCP_TRANSPORT", "streamable-http")
-    mcp.run(transport=transport)  # type: ignore[arg-type]
+    mcp.run(transport=config.TRANSPORT)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

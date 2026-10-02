@@ -5,6 +5,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     LEXAR_DB=/app/data/lexar.db \
     PORT=8000 \
+    HOST=0.0.0.0 \
     MCP_TRANSPORT=streamable-http
 
 COPY pyproject.toml README.md ./

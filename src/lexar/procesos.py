@@ -73,7 +73,7 @@ def get_proceso(jurisdiccion: str, proceso: str) -> dict:
     m = modelo(jurisdiccion)
     if proceso not in m["procesos"]:
         raise KeyError(
-            f"Proceso '{proceso}' no existe en {jurisdiccion}. Usá ar_listar_procesos. "
+            f"Proceso '{proceso}' no existe en {jurisdiccion}. Usá lexar_listar_procesos. "
             f"Disponibles: {', '.join(m['procesos'])}"
         )
     return m["procesos"][proceso]

@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 import sys
 
-from lexar import procesos
-from lexar.server import store
+from lexar import config, procesos
+from lexar.store import Store
 
 LETRAS = {
     1: "UN", 2: "DOS", 3: "TRES", 4: "CUATRO", 5: "CINCO", 6: "SEIS", 8: "OCHO", 10: "DIEZ",
@@ -21,7 +21,8 @@ LETRAS = {
 CITA = re.compile(r"^CPCCN art\.\s*(\d+)")
 
 
-def verificar(jurisdiccion: str = "nacion") -> list[dict]:
+def verificar(jurisdiccion: str = "nacion", store: Store | None = None) -> list[dict]:
+    store = store or Store(config.DB_PATH)
     out = []
     for pid, p in procesos.modelo(jurisdiccion)["procesos"].items():
         for f in p.get("fases", []):
@@ -29,7 +30,7 @@ def verificar(jurisdiccion: str = "nacion") -> list[dict]:
             m = CITA.search(str(pl.get("norma", "")))
             if not m or not pl.get("dias"):
                 continue
-            art = store().get_articulo("cpccn", m.group(1))
+            art = store.get_articulo("cpccn", m.group(1))
             dias = pl["dias"]
             if art is None:
                 estado = "SIN_ARTICULO"

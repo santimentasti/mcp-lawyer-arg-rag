@@ -251,27 +251,36 @@ class Store:
         )
         return [dict(r) for r in rows]
 
-    def buscar(self, query: str, norma_id: str | None = None, limit: int = 10) -> list[Hit]:
+    def buscar(self, query: str, norma_id: str | None = None, limit: int = 10, offset: int = 0) -> list[Hit]:
+        """BM25 sobre versiones vigentes, paginado con ``limit``/``offset``."""
+        where, args = self._fts_where(query, norma_id)
+        if where is None:
+            return []
+        sql = f"""SELECT a.*, bm25(articulos_fts, 0, 0, 2.0, 1.0, 0.5) AS score
+                  FROM articulos_fts JOIN articulos a ON a.pk = articulos_fts.rowid
+                  WHERE {where} ORDER BY score LIMIT ? OFFSET ?"""
+        hits = []
+        for r in self.db.execute(sql, [*args, limit, offset]):
+            art = _row_to_art(r)
+            # tabla FTS sin contenido (content=''): el fragmento se arma desde el texto guardado
+            hits.append(Hit(art, -r["score"], _snippet(art.texto, query)))
+        return hits
+
+    def contar(self, query: str, norma_id: str | None = None) -> int:
+        where, args = self._fts_where(query, norma_id)
+        if where is None:
+            return 0
+        sql = f"SELECT count(*) FROM articulos_fts JOIN articulos a ON a.pk = articulos_fts.rowid WHERE {where}"
+        return self.db.execute(sql, args).fetchone()[0]
+
+    @staticmethod
+    def _fts_where(query: str, norma_id: str | None) -> tuple[str | None, list]:
         q = _fts_query(query)
         if not q:
-            return []
-        sql = """SELECT a.*, bm25(articulos_fts, 0, 0, 2.0, 1.0, 0.5) AS score,
-                        snippet(articulos_fts, 3, '«', '»', ' … ', 24) AS snip
-                 FROM articulos_fts JOIN articulos a ON a.pk = articulos_fts.rowid
-                 WHERE articulos_fts MATCH ?"""
-        args: list = [q]
+            return None, []
         if norma_id:
-            sql += " AND a.norma_id = ?"
-            args.append(norma_id)
-        sql += " ORDER BY score LIMIT ?"
-        args.append(limit)
-        # content='' FTS tables don't store column text, so snippet() returns
-        # empty; fall back to a window of the stored article text.
-        hits = []
-        for r in self.db.execute(sql, args):
-            art = _row_to_art(r)
-            hits.append(Hit(art, -r["score"], r["snip"] or _snippet(art.texto, query)))
-        return hits
+            return "articulos_fts MATCH ? AND a.norma_id = ?", [q, norma_id]
+        return "articulos_fts MATCH ?", [q]
 
     def stats(self) -> dict:
         return {
