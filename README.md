@@ -17,7 +17,7 @@ lexar-server            # MCP en http://localhost:8000/mcp (stateless, Streamabl
 pytest                  # tests
 python -m lexar.verificar_modelo   # contrasta los plazos del modelo con el texto del CPCCN
 ```
-Docker: `docker build -t lexar . && docker run -p 8000:8000 lexar`.
+Docker: `docker build -t lexar . && docker run -p 8000:8000 lexar`. Vercel: importar el repo (usa `app.py`).
 Para conectarlo a ChatGPT / Claude ver **[docs/sandbox.md](docs/sandbox.md)**.
 
 ## Estructura

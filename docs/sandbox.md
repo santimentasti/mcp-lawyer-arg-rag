@@ -25,7 +25,15 @@ Para Claude Desktop / Claude Code por stdio:
 {"mcpServers": {"lexar": {"command": "lexar-server", "env": {"MCP_TRANSPORT": "stdio", "LEXAR_DB": "/ruta/data/lexar.db"}}}}
 ```
 
-## Opción B — Railway (recomendado para el sandbox compartido)
+## Opción V — Vercel (gratis, ya preparado: `app.py` + `requirements.txt`)
+1. vercel.com → **Add New → Project → Import** `santimentasti/mcp-lawyer-arg-rag`. Framework: *Other / Python* (lo detecta solo por `app.py`).
+2. Mientras el código esté en la rama `claude/mcp-derecho-ar-mvp`: Settings → Git → **Production Branch** = esa rama, o mergear el PR a `main`.
+3. Deploy. En el primer request la función arma la base en `/tmp` desde clarius/normas (cold start ~3–5 s).
+4. Probar `https://<proyecto>.vercel.app/health` → `{"ok": true, "articulos_vigentes": 3473, ...}`.
+5. URL MCP: `https://<proyecto>.vercel.app/mcp`.
+6. **Deployment Protection**: la URL de *producción* tiene que ser pública. Los previews quedan detrás de Vercel Auth y un cliente MCP no puede autenticarse ahí.
+
+## Opción B — Railway (contenedor persistente)
 1. New Project → Deploy from GitHub repo → este repo (detecta el `Dockerfile`).
 2. La base se construye en el build (`lexar-ingest`). Variables: ninguna obligatoria (`PORT` la inyecta Railway).
 3. Generate Domain → `https://<app>.up.railway.app/mcp`.
