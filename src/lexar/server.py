@@ -29,7 +29,10 @@ from lexar import citas, plazos, procesos
 from lexar.ingest.clarius import es_derogado
 from lexar.store import Articulo, Store
 
-DB_PATH = os.environ.get("LEXAR_DB", str(Path.cwd() / "data" / "lexar.db"))
+DB_PATH = os.environ.get(
+    "LEXAR_DB",
+    "/tmp/lexar.db" if os.environ.get("VERCEL") else str(Path.cwd() / "data" / "lexar.db"),
+)
 
 INSTRUCCIONES = """\
 Conector de derecho argentino, Civil y Comercial (Nación/CABA y Provincia de Buenos Aires).
@@ -60,10 +63,19 @@ _store: Store | None = None
 
 
 def store() -> Store:
+    """Abre la base; si no existe y LEXAR_AUTO_INGEST != '0', la construye
+    (útil en serverless: Vercel sólo permite escribir en /tmp)."""
     global _store
     if _store is None:
         if not Path(DB_PATH).exists():
-            raise RuntimeError(f"No existe la base {DB_PATH}. Ejecutá `lexar-ingest` primero.")
+            if os.environ.get("LEXAR_AUTO_INGEST", "1") == "0":
+                raise RuntimeError(f"No existe la base {DB_PATH}. Ejecutá `lexar-ingest` primero.")
+            from lexar.ingest.cli import ingest
+
+            Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+            tmp = f"{DB_PATH}.{os.getpid()}.tmp"
+            ingest(Store(tmp))
+            os.replace(tmp, DB_PATH)
         _store = Store(DB_PATH)
     return _store
 
