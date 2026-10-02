@@ -33,12 +33,14 @@ Para Claude Desktop / Claude Code por stdio:
 5. URL MCP: `https://<proyecto>.vercel.app/mcp`.
 6. **Deployment Protection**: la URL de *producción* tiene que ser pública. Los previews quedan detrás de Vercel Auth y un cliente MCP no puede autenticarse ahí.
 
-## Opción B — Railway (contenedor persistente)
-1. New Project → Deploy from GitHub repo → este repo (detecta el `Dockerfile`).
-2. La base se construye en el build (`lexar-ingest`). Variables: ninguna obligatoria (`PORT` la inyecta Railway).
-3. Generate Domain → `https://<app>.up.railway.app/mcp`.
-- Costo: plan Hobby ~US$5/mes. Render free también sirve, pero duerme a los 15 min y el arranque en frío puede cortar la llamada del conector.
-- Cuando migremos a Postgres + pgvector: **Supabase** (free 500 MB) o el Postgres de Railway.
+## Opción B — Railway (contenedor persistente, recomendado)
+El repo trae `railway.json` (build con el `Dockerfile`, healthcheck en `/health`).
+1. railway.com → **New Project → Deploy from GitHub repo** → `santimentasti/mcp-lawyer-arg-rag`.
+2. Service → Settings → **Source → Branch**: `claude/mcp-derecho-ar-mvp` (o `main`, una vez mergeado).
+3. Settings → Networking → **Generate Domain** (puerto: el que inyecta Railway en `PORT`; el server lo lee solo).
+4. Esperar el build (~2 min; la base se arma en el build) y probar `https://<app>.up.railway.app/health`.
+5. URL del conector: **`https://<app>.up.railway.app/mcp`**.
+- Costo: ~US$5/mes (Hobby). No hay que cargar variables: `HOST=0.0.0.0` ya está en la imagen.
 
 ## Conectar a ChatGPT
 1. Settings → Apps & Connectors → Advanced → activar **Developer mode**. La disponibilidad por plan varía: en Business/Enterprise/Edu lo habilita un admin; en Plus/Pro, verificar en la cuenta.
