@@ -1,0 +1,67 @@
+# Calendario judicial por jurisdicción.
+#
+# IMPORTANTE: los feriados trasladables, los días no laborables "puente" y las
+# fechas de feria de invierno se fijan cada año por decreto / acordada. Todo lo
+# marcado `verificar: true` DEBE confirmarse contra la fuente oficial antes de
+# usarse en producción (CSJN acordadas, SCBA resoluciones, Decreto anual de
+# feriados). El servidor siempre devuelve esta advertencia al calcular plazos.
+
+feriados_nacionales:
+  2026:
+    - {fecha: 2026-01-01, motivo: "Año Nuevo"}
+    - {fecha: 2026-02-16, motivo: "Carnaval"}
+    - {fecha: 2026-02-17, motivo: "Carnaval"}
+    - {fecha: 2026-03-23, motivo: "Día no laborable con fines turísticos (puente)", verificar: true}
+    - {fecha: 2026-03-24, motivo: "Día Nacional de la Memoria por la Verdad y la Justicia"}
+    - {fecha: 2026-04-02, motivo: "Día del Veterano y de los Caídos en Malvinas / Jueves Santo"}
+    - {fecha: 2026-04-03, motivo: "Viernes Santo"}
+    - {fecha: 2026-05-01, motivo: "Día del Trabajador"}
+    - {fecha: 2026-05-25, motivo: "Revolución de Mayo"}
+    - {fecha: 2026-06-15, motivo: "Paso a la Inmortalidad de Güemes (trasladado del 17/6)", verificar: true}
+    - {fecha: 2026-06-20, motivo: "Paso a la Inmortalidad de Belgrano"}
+    - {fecha: 2026-07-09, motivo: "Día de la Independencia"}
+    - {fecha: 2026-07-10, motivo: "Día no laborable con fines turísticos (puente)", verificar: true}
+    - {fecha: 2026-08-17, motivo: "Paso a la Inmortalidad de San Martín"}
+    - {fecha: 2026-10-12, motivo: "Día del Respeto a la Diversidad Cultural"}
+    - {fecha: 2026-11-23, motivo: "Día de la Soberanía Nacional (trasladado del 20/11)", verificar: true}
+    - {fecha: 2026-12-07, motivo: "Día no laborable con fines turísticos (puente)", verificar: true}
+    - {fecha: 2026-12-08, motivo: "Inmaculada Concepción de María"}
+    - {fecha: 2026-12-25, motivo: "Navidad"}
+  2027:
+    - {fecha: 2027-01-01, motivo: "Año Nuevo"}
+
+jurisdicciones:
+  nacion:
+    nombre: "Justicia Nacional / Federal (CPCCN) — incluye juzgados nacionales Civil y Comercial con asiento en CABA"
+    fuente: "CSJN — Reglamento para la Justicia Nacional (RJN) art. 2 y acordadas anuales de feria"
+    plazo_gracia: {horas: 2, norma: "CPCCN art. 124"}
+    notificacion:
+      ministerio_legis: {regla: martes_viernes, norma: "CPCCN art. 133"}
+      electronica: {regla: disponible, norma: "Ley 26.685; Acordadas CSJN 31/2011, 38/2013, 3/2015 — se perfecciona al quedar disponible en la casilla; el plazo corre desde el día hábil siguiente"}
+    ferias:
+      - {desde: 2026-01-01, hasta: 2026-01-31, motivo: "Feria judicial de enero (RJN art. 2)"}
+      - {desde: 2026-07-20, hasta: 2026-07-31, motivo: "Feria judicial de invierno", verificar: true}
+      - {desde: 2027-01-01, hasta: 2027-01-31, motivo: "Feria judicial de enero (RJN art. 2)"}
+    inhabiles_extra: []   # asuetos / días inhábiles declarados por acordada
+
+  caba:
+    # Los juicios civiles y comerciales de CABA tramitan ante la Justicia
+    # Nacional (CPCCN), así que este perfil usa el calendario nacional. El
+    # Poder Judicial de la Ciudad (CAyT, Consumo) tiene calendario propio y
+    # queda fuera del MVP.
+    nombre: "CABA — juzgados nacionales Civil y Comercial (calendario de la Justicia Nacional)"
+    fuente: "CSJN — RJN art. 2 y acordadas anuales de feria"
+    hereda_de: nacion
+
+  pba:
+    nombre: "Poder Judicial de la Provincia de Buenos Aires (CPCC PBA, Dec.-Ley 7425/68)"
+    fuente: "SCBA — Acuerdos y resoluciones de feria; Acuerdo 4013/21 (notificaciones electrónicas)"
+    plazo_gracia: {horas: 4, norma: "CPCC PBA art. 124"}
+    notificacion:
+      ministerio_legis: {regla: martes_viernes, norma: "CPCC PBA art. 133"}
+      electronica: {regla: martes_viernes, norma: "CPCC PBA art. 143 (Ley 14.142); Ac. SCBA 4013/21 art. 13 — martes o viernes (o siguiente hábil) posterior a quedar disponible"}
+    ferias:
+      - {desde: 2026-01-01, hasta: 2026-01-31, motivo: "Feria judicial de verano", verificar: true}
+      - {desde: 2026-07-20, hasta: 2026-07-31, motivo: "Feria judicial de invierno", verificar: true}
+      - {desde: 2027-01-01, hasta: 2027-01-31, motivo: "Feria judicial de verano", verificar: true}
+    inhabiles_extra: []

@@ -1,0 +1,87 @@
+# Provincia de Buenos Aires — CPCC PBA (Decreto-Ley 7425/68 y modificatorias).
+# Hereda el modelo nacional y declara las diferencias conocidas.
+#
+# ADVERTENCIA: la numeración de artículos del CPCC PBA coincide en gran parte
+# con el CPCCN (ambos derivan del mismo texto de 1967-68), pero NO en todo:
+# p.ej. la PBA conserva el proceso SUMARIO, lo que corre la numeración del
+# proceso de conocimiento. Todo artículo heredado del modelo nacional debe
+# verificarse contra el texto de normas.gba.gob.ar antes de citarse.
+
+hereda_de: nacion
+jurisdiccion: pba
+codigo: "CPCC PBA — Decreto-Ley 7425/68 (texto según Leyes 11.593, 12.357, 14.142 y otras)"
+fuente_url: "https://normas.gba.gob.ar/"
+nota_jurisdiccion: >-
+  Heredado del modelo nacional con diferencias PBA declaradas. La numeración de
+  artículos indicada como 'CPCCN' debe controlarse con el CPCC PBA.
+
+reglas_generales:
+  - {tema: "Plazo de gracia (cargo)", regla: "El escrito puede presentarse dentro de las CUATRO primeras horas del despacho del día hábil siguiente al vencimiento.", norma: "CPCC PBA art. 124"}
+  - {tema: "Notificación electrónica", regla: "Se tiene por cumplida el martes o viernes inmediato posterior (o el siguiente hábil) al día en que quedó disponible en el Portal de Notificaciones y Presentaciones Electrónicas.", norma: "CPCC PBA art. 143 (Ley 14.142); Ac. SCBA 4013/21 art. 13"}
+  - {tema: "Caducidad de instancia", regla: "Antes de declararla debe intimarse a la parte para que en 5 días manifieste su intención de continuar y produzca la actividad de impulso.", norma: "CPCC PBA art. 315 (Ley 12.357)", verificar: true}
+  - {tema: "Proceso sumario", regla: "A diferencia de la Nación, la PBA conserva el proceso sumario.", norma: "CPCC PBA arts. 320 y 484-495", verificar: true}
+  - {tema: "Oralidad", regla: "Plan de oralidad SCBA: audiencia preliminar y audiencia de vista de causa en procesos de conocimiento.", norma: "Resoluciones SCBA (plan de oralidad)", verificar: true}
+
+procesos:
+  mediacion_prejudicial:
+    nombre: "Mediación previa obligatoria (PBA)"
+    norma: "Ley 13.951; Dec. 2530/10 y modificatorios"
+    ambito: "Previa a la promoción de los juicios en materia civil y comercial (art. 2)."
+    excluidos: ["penales", "familia (separación, divorcio, filiación, alimentos, guardas, adopción)", "incapacidad e inhabilitación", "Estado provincial o municipal parte", "amparo, hábeas corpus, interdictos", "medidas cautelares", "sucesiones", "concursos y quiebras", "otros (art. 4): VERIFICAR la lista completa"]
+    verificar: true
+    fases:
+      - id: requerimiento
+        nombre: "Formulario de requerimiento"
+        actor: requirente
+        notas: "Se presenta ante la Receptoría General de Expedientes del departamento judicial: se sortea el juzgado y el mediador."
+        siguiente: [audiencias]
+      - id: audiencias
+        nombre: "Audiencias de mediación"
+        plazo: {dias: 60, tipo: corridos, desde: "la primera audiencia (verificar cómputo)", norma: "Ley 13.951", verificar: true}
+        ramas:
+          - {si: "acuerdo", ir_a: ejecucion_de_sentencia}
+          - {si: "sin acuerdo", ir_a: acta_cierre}
+      - {id: acta_cierre, nombre: "Acta de cierre", siguiente: ["ordinario.demanda"]}
+
+  sumario:
+    nombre: "Proceso sumario (sólo PBA)"
+    norma: "CPCC PBA arts. 320 y 484-495"
+    ambito: "Casos enumerados en el art. 320 del CPCC PBA (verificar)."
+    mediacion: obligatoria
+    caducidad: "3 meses"
+    verificar: true
+    fases:
+      - {id: demanda, nombre: "Demanda (con toda la prueba)", siguiente: [contestacion]}
+      - id: contestacion
+        nombre: "Contestación"
+        plazo: {dias: 10, tipo: habiles, desde: "la notificación del traslado", norma: "CPCC PBA art. 486", verificar: true}
+        siguiente: [prueba]
+      - {id: prueba, nombre: "Prueba", siguiente: [sentencia]}
+      - {id: sentencia, nombre: "Sentencia", siguiente: [apelacion]}
+      - id: apelacion
+        nombre: "Apelación"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación", norma: "CPCC PBA art. 244", verificar: true}
+
+overrides:
+  ordinario:
+    norma: "CPCC PBA arts. 319 y ss."
+    fases:
+      - id: mediacion
+        ref: mediacion_prejudicial
+      - id: demanda
+        escritos: ["Demanda con ofrecimiento de prueba", "Acta de cierre de mediación (Ley 13.951)", "Poder / acreditación de personería", "Tasa de justicia y sobretasa (Ley Fiscal PBA)", "Bono Colegio de Abogados + aportes Caja de Previsión (Ley 6716)"]
+        notas: "Ingreso por el Portal de Presentaciones Electrónicas SCBA → Receptoría General de Expedientes; gestión en Augusta; consulta en MEV."
+      - id: contestacion
+        plazo: {dias: 15, tipo: habiles, desde: "la notificación del traslado", norma: "CPCC PBA art. 354", verificar: true}
+      - id: audiencia_preliminar
+        notas: "Plan de oralidad SCBA: audiencia preliminar (fija hechos y provee prueba) y luego audiencia de vista de causa para producir la prueba oral. Verificar numeración (CPCC PBA)."
+        verificar: true
+  sumarisimo:
+    norma: "CPCC PBA art. 496"
+    verificar: true
+
+practica:
+  organos: "Juzgados de Primera Instancia en lo Civil y Comercial de cada departamento judicial; Cámaras de Apelación departamentales; SCBA."
+  receptoria: "Receptoría General de Expedientes: sorteo y asignación."
+  sistema: "Augusta (gestión), MEV (Mesa de Entradas Virtual), Portal de Notificaciones y Presentaciones Electrónicas (Ac. SCBA 4013/21)."
+  tasas: "Tasa de justicia y sobretasa (Ley Fiscal/Impositiva PBA); aportes Caja de Previsión Social para Abogados (Ley 6716); bono Colegio de Abogados departamental."

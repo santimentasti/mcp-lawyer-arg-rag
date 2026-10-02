@@ -1,0 +1,18 @@
+# Ciudad Autónoma de Buenos Aires.
+#
+# Hoy los juicios civiles y comerciales entre particulares de CABA tramitan
+# ante la JUSTICIA NACIONAL (juzgados nacionales Civil y Comercial) con el
+# CPCCN, así que este perfil hereda el modelo nacional completo. La
+# transferencia de esa competencia a la Ciudad está en curso, y cuando ocurra
+# este archivo concentrará las diferencias.
+#
+# El Poder Judicial de la Ciudad propio (fueros CAyT, Consumo, PCyF) aplica
+# otros códigos (p.ej. CCAyT, Ley 189) que quedan fuera del MVP Civil y Comercial.
+
+hereda_de: nacion
+jurisdiccion: caba
+nota_jurisdiccion: >-
+  En CABA, los procesos civiles y comerciales entre particulares tramitan ante
+  la Justicia Nacional con el CPCCN: rige el mismo modelo que 'nacion'. El fuero
+  de Relaciones de Consumo y el CAyT de la Ciudad tienen normas propias
+  (no cubiertas todavía).

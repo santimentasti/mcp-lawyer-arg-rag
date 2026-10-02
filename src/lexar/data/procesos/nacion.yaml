@@ -1,0 +1,464 @@
+# Modelo de etapas procesales — Justicia Nacional Civil y Comercial (CPCCN).
+# Aplica a los juzgados nacionales Civil y Comercial con asiento en CABA y al
+# fuero Civil y Comercial Federal.
+#
+# Esquema de cada fase:
+#   id, nombre, articulos, actor, plazo {dias, tipo (habiles|corridos|meses),
+#   desde, norma}, escritos[], notas, siguiente[], ramas[{si, ir_a, norma}],
+#   verificar (true = sale de conocimiento secundario; controlar contra el
+#   texto de InfoLEG antes de producción).
+#
+# Estado normativo a 2026-10-02: rige la Ley 17.454 (t.o. Dec. 1042/81) con sus
+# reformas. El anteproyecto 2019 no se sancionó. En 2026 el Ejecutivo anunció
+# una reforma del CPCCN y hay un proyecto de desalojos en el Congreso (sin
+# sanción verificada).
+
+jurisdiccion: nacion
+codigo: "CPCCN — Ley 17.454 (t.o. Dec. 1042/1981)"
+fuente_url: "https://servicios.infoleg.gob.ar/infolegInternet/anexos/15000-19999/16547/texact.htm"
+
+reglas_generales:
+  - {tema: "Días hábiles", regla: "Los plazos se cuentan en días hábiles judiciales; no se computan sábados, domingos, feriados, ferias ni días inhábiles declarados por la CSJN.", norma: "CPCCN arts. 152 y 156"}
+  - {tema: "Comienzo del plazo", regla: "Corre desde el día hábil siguiente a la notificación; si es común, desde la última notificación.", norma: "CPCCN art. 156"}
+  - {tema: "Perentoriedad", regla: "Los plazos legales y judiciales son perentorios: vencidos, se pierde el derecho sin necesidad de acuse.", norma: "CPCCN art. 155"}
+  - {tema: "Plazo de gracia (cargo)", regla: "El escrito no presentado el día del vencimiento puede presentarse dentro de las DOS primeras horas del despacho del día hábil siguiente.", norma: "CPCCN art. 124"}
+  - {tema: "Notificación ministerio legis", regla: "Las resoluciones quedan notificadas martes y viernes (o el siguiente hábil si alguno es feriado).", norma: "CPCCN art. 133"}
+  - {tema: "Notificación por cédula / personal", regla: "Traslado de demanda, reconvención y documentos; citación de terceros; audiencias; apertura a prueba; autos para alegar; sentencias definitivas e interlocutorias con fuerza de definitiva; caducidad; honorarios, entre otras.", norma: "CPCCN art. 135"}
+  - {tema: "Notificación electrónica", regla: "Se perfecciona cuando queda disponible en la casilla del destinatario; el plazo corre desde el día hábil siguiente. El traslado de demanda y las notificaciones al domicilio real van por cédula papel.", norma: "Ley 26.685; Acordadas CSJN 31/2011, 38/2013, 3/2015"}
+  - {tema: "Ampliación por distancia", regla: "1 día por cada 200 km o fracción que no baje de 100 km.", norma: "CPCCN art. 158"}
+  - {tema: "Plazo supletorio", regla: "Traslados y vistas sin plazo fijado: 5 días.", norma: "CPCCN art. 150"}
+  - {tema: "Caducidad de instancia", regla: "6 meses en primera instancia; 3 meses en segunda instancia, sumarísimo, ejecutivo, ejecuciones especiales e incidentes. Corren días inhábiles salvo ferias. No procede en ejecución de sentencia, sucesiones, concursos, voluntarios, ni con la causa en estado de sentencia.", norma: "CPCCN arts. 310, 311, 313"}
+  - {tema: "Rebeldía", regla: "A pedido de parte; se notifica por cédula; después rige ministerio legis. Presunción de verdad de hechos lícitos afirmados.", norma: "CPCCN arts. 59-67"}
+  - {tema: "Plazos para resolver", regla: "Providencias simples 3 días; interlocutorias 10; sentencia definitiva en ordinario 40 días (unipersonal) desde que queda firme el llamamiento de autos.", norma: "CPCCN art. 34 inc. 3", verificar: true}
+
+modos_anormales_de_terminacion:
+  - {id: desistimiento_proceso, norma: "CPCCN art. 304", nota: "Después de notificada la demanda requiere conformidad del demandado."}
+  - {id: desistimiento_derecho, norma: "CPCCN art. 305", nota: "No requiere conformidad; el juez controla que el derecho sea disponible."}
+  - {id: allanamiento, norma: "CPCCN art. 307", nota: "El juez dicta sentencia conforme; costas art. 70."}
+  - {id: transaccion, norma: "CPCCN art. 308; CCyCN arts. 1641-1648", nota: "Requiere homologación; título ejecutable (art. 500)."}
+  - {id: conciliacion, norma: "CPCCN art. 309", nota: "Acuerdo ante el juez con efecto de sentencia."}
+  - {id: caducidad_instancia, norma: "CPCCN arts. 310-318", nota: "No extingue la acción; la interrupción de la prescripción se tiene por no sucedida (CCyCN art. 2547)."}
+
+procesos:
+
+  mediacion_prejudicial:
+    nombre: "Mediación prejudicial obligatoria"
+    norma: "Ley 26.589; Dec. 1467/2011"
+    ambito: "Previa a todo proceso judicial en los fueros civil y comercial nacionales (art. 1). Optativa en ejecuciones y desalojos (art. 6, verificar redacción)."
+    excluidos: ["penales", "familia (divorcio, filiación, responsabilidad parental salvo lo patrimonial, adopción)", "capacidad", "Estado parte", "amparo, hábeas corpus/data, interdictos", "medidas cautelares", "diligencias preliminares y prueba anticipada", "sucesiones", "concursos y quiebras", "voluntarios", "laborales"]
+    fases:
+      - id: requerimiento
+        nombre: "Formulario de requerimiento"
+        actor: requirente
+        notas: "Se presenta en la Mesa General de Entradas de la Cámara (Civil o Comercial): se sortea el juzgado que intervendrá y el mediador (o se designa por acuerdo)."
+        siguiente: [audiencias]
+      - id: audiencias
+        nombre: "Audiencias de mediación"
+        actor: mediador y partes
+        plazo: {dias: 60, tipo: corridos, desde: "la última notificación al requerido/tercero", norma: "Ley 26.589 art. 20", prorrogable: "por acuerdo de partes"}
+        notas: "La mediación suspende la prescripción; se reanuda a los 20 días de disponible el acta de cierre (art. 18; CCyCN art. 2542). La incomparecencia genera multa."
+        ramas:
+          - {si: "acuerdo", ir_a: "ejecucion_de_sentencia", norma: "acuerdo ejecutable (CPCCN art. 500)"}
+          - {si: "sin acuerdo / incomparecencia", ir_a: acta_cierre}
+      - id: acta_cierre
+        nombre: "Acta de cierre sin acuerdo"
+        notas: "Habilita la vía judicial; se acompaña con la demanda. Según la jurisprudencia, debe demandarse dentro de 1 año del cierre."
+        verificar: true
+        siguiente: ["ordinario.demanda"]
+
+  ordinario:
+    nombre: "Proceso de conocimiento ordinario"
+    norma: "CPCCN arts. 319, 330-497"
+    ambito: "Residual: toda contienda sin trámite especial (art. 319)."
+    mediacion: obligatoria
+    caducidad: "6 meses (art. 310 inc. 1)"
+    fases:
+      - id: mediacion
+        nombre: "Mediación prejudicial"
+        ref: mediacion_prejudicial
+        siguiente: [demanda]
+      - id: demanda
+        nombre: "Demanda"
+        articulos: "330 (requisitos), 331 (modificación/ampliación), 333 (documental y prueba), 337 (rechazo in limine)"
+        actor: actor
+        escritos: ["Demanda con ofrecimiento de TODA la prueba (arts. 330 inc. 6 y 333)", "Acta de cierre de mediación", "Poder / acreditación de personería", "Tasa de justicia (Ley 23.898, 3%) y bono CPACF"]
+        notas: "Ingreso por el Portal PJN; el juzgado ya está asignado por el sorteo de la mediación."
+        siguiente: [traslado]
+      - id: traslado
+        nombre: "Traslado y notificación de la demanda"
+        articulos: "338 (traslado), 135 inc. 1 (cédula), 339-341 (citación), 342 y 158 (fuera de la jurisdicción)"
+        actor: "juzgado (provee) / actor (confecciona la cédula papel al domicilio real)"
+        notas: "Notificación por cédula papel al domicilio real; no va por domicilio electrónico."
+        siguiente: [contestacion]
+      - id: contestacion
+        nombre: "Contestación de demanda / excepciones / reconvención"
+        articulos: "338, 346-354 (excepciones previas), 356 (contenido), 357 (reconvención)"
+        actor: demandado
+        plazo: {dias: 15, tipo: habiles, desde: "la notificación del traslado (+ ampliación por distancia, art. 158)", norma: "CPCCN art. 338", nota: "60 días si el demandado es la Nación, una provincia o un municipio (verificar)."}
+        escritos: ["Contestación: reconocer o negar cada hecho y documento (art. 356 inc. 1)", "Excepciones previas en el mismo escrito (art. 346)", "Reconvención en el mismo escrito (art. 357)", "Ofrecimiento de prueba"]
+        ramas:
+          - {si: "no contesta / no comparece", ir_a: rebeldia, norma: "CPCCN arts. 59-60"}
+          - {si: "se allana", ir_a: sentencia, norma: "CPCCN art. 307"}
+          - {si: "opone excepciones previas", ir_a: excepciones_previas, norma: "CPCCN arts. 346-354"}
+          - {si: "reconviene", ir_a: contestacion_reconvencion, norma: "CPCCN art. 358"}
+          - {si: "acompaña documentos", ir_a: traslado_documentos, norma: "CPCCN art. 334"}
+        siguiente: [audiencia_preliminar]
+      - id: rebeldia
+        nombre: "Declaración de rebeldía"
+        articulos: "59-67"
+        notas: "Se notifica por cédula; las resoluciones posteriores por ministerio legis. El proceso sigue su curso."
+        siguiente: [audiencia_preliminar]
+      - id: excepciones_previas
+        nombre: "Trámite de excepciones previas"
+        articulos: "347 (enumeración), 348 (arraigo), 350 (traslado), 353-354 (resolución)"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación del traslado al actor", norma: "CPCCN art. 150 (plazo supletorio; el traslado lo ordena el art. 350)"}
+        notas: "Incompetencia, falta de personería, falta de legitimación manifiesta, litispendencia, defecto legal, cosa juzgada, transacción/conciliación/desistimiento del derecho, defensas temporarias."
+        siguiente: [audiencia_preliminar]
+      - id: contestacion_reconvencion
+        nombre: "Contestación de la reconvención"
+        actor: actor
+        plazo: {dias: 15, tipo: habiles, desde: "la notificación del traslado de la reconvención", norma: "CPCCN art. 358"}
+        siguiente: [audiencia_preliminar]
+      - id: traslado_documentos
+        nombre: "Traslado de documentos acompañados con la contestación"
+        actor: actor
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación", norma: "CPCCN art. 334"}
+        siguiente: [audiencia_preliminar]
+      - id: audiencia_preliminar
+        nombre: "Audiencia preliminar"
+        articulos: "359 (apertura a prueba), 360 (audiencia), 360 bis, 361 (puro derecho)"
+        actor: "juez (indelegable) y partes"
+        notas: "Invitación a conciliar; fija los hechos controvertidos y conducentes; provee la prueba; fija el plazo de prueba; puede declarar la cuestión de puro derecho. Los hechos nuevos se alegan dentro de los 5 días de notificada la audiencia (art. 365, verificar)."
+        ramas:
+          - {si: "cuestión de puro derecho", ir_a: autos_para_sentencia, norma: "CPCCN art. 361"}
+          - {si: "conciliación", ir_a: fin, norma: "CPCCN art. 309"}
+        siguiente: [prueba]
+      - id: prueba
+        nombre: "Período de prueba"
+        articulos: "367 (plazo), 378 (medios), 384 (negligencia), 387-395 documental, 396-403 informativa, 404-425 confesional, 426-456 testimonial, 457-478 pericial"
+        plazo: {dias: 40, tipo: habiles, desde: "la apertura a prueba (plazo común fijado por el juez, máx. 40)", norma: "CPCCN art. 367"}
+        escritos: ["Oficios (art. 400; Ley 22.172 para extraña jurisdicción; DEOX)", "Pliego de posiciones", "Interrogatorio de testigos", "Puntos de pericia", "Impugnación / pedido de explicaciones al perito (art. 473: 5 días, verificar)", "Pedido de clausura del período de prueba"]
+        siguiente: [alegatos]
+      - id: alegatos
+        nombre: "Alegatos"
+        articulos: "482"
+        actor: ambas partes
+        plazo: {dias: 6, tipo: habiles, desde: "la notificación (por cédula) de la providencia que pone los autos para alegar", norma: "CPCCN art. 482"}
+        siguiente: [autos_para_sentencia]
+      - id: autos_para_sentencia
+        nombre: "Llamamiento de autos para sentencia"
+        articulos: "483-484"
+        notas: "Cierra la discusión: no se admiten más escritos ni prueba (salvo medidas para mejor proveer, art. 36 inc. 4)."
+        siguiente: [sentencia]
+      - id: sentencia
+        nombre: "Sentencia definitiva de primera instancia"
+        articulos: "163 (contenido), 34 inc. 3 c (plazo), 68-77 (costas)"
+        actor: juez
+        plazo: {dias: 40, tipo: habiles, desde: "que queda firme el llamamiento de autos", norma: "CPCCN art. 34 inc. 3 c)", verificar: true}
+        notas: "Se notifica por cédula/electrónica (art. 135). Honorarios: Ley 27.423."
+        siguiente: [aclaratoria, apelacion]
+      - id: aclaratoria
+        nombre: "Aclaratoria"
+        plazo: {dias: 3, tipo: habiles, desde: "la notificación de la sentencia", norma: "CPCCN art. 166 inc. 2"}
+        siguiente: [apelacion]
+      - id: apelacion
+        nombre: "Recurso de apelación (libremente)"
+        articulos: "242-244 (procedencia y plazo), 243 (efectos), 259 (expresión de agravios), 260 (prueba en alzada), 265 (traslado), 266 (deserción)"
+        actor: parte vencida
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación de la sentencia", norma: "CPCCN art. 244"}
+        notas: "Efecto suspensivo como regla. Concedido libremente: expresión de agravios 10 días desde la providencia que pone los autos en la oficina (art. 259); contestación 10 días; deserción si no se expresan agravios (art. 266)."
+        ramas:
+          - {si: "apelación denegada", ir_a: queja, norma: "CPCCN arts. 282-285 (5 días)"}
+          - {si: "sentencia de Cámara con cuestión federal", ir_a: recurso_extraordinario, norma: "Ley 48 art. 14; CPCCN 256-258"}
+        siguiente: [expresion_agravios]
+      - id: expresion_agravios
+        nombre: "Expresión de agravios"
+        plazo: {dias: 10, tipo: habiles, desde: "la notificación de la providencia que pone los autos en la oficina", norma: "CPCCN art. 259"}
+        siguiente: [contestacion_agravios]
+      - id: contestacion_agravios
+        nombre: "Contestación de agravios"
+        plazo: {dias: 10, tipo: habiles, desde: "la notificación del traslado", norma: "CPCCN art. 265"}
+        siguiente: [sentencia_camara]
+      - id: sentencia_camara
+        nombre: "Sentencia de Cámara"
+        siguiente: [recurso_extraordinario, ejecucion]
+      - id: queja
+        nombre: "Queja por apelación denegada"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación de la denegatoria", norma: "CPCCN art. 282"}
+      - id: recurso_extraordinario
+        nombre: "Recurso extraordinario federal"
+        plazo: {dias: 10, tipo: habiles, desde: "la notificación de la sentencia definitiva del superior tribunal de la causa", norma: "CPCCN art. 257; Ley 48 art. 14; Acordada CSJN 4/2007"}
+        notas: "Traslado por 10 días. Si se deniega: queja ante la CSJN en 5 días + distancia (art. 285) con el depósito del art. 286."
+      - id: ejecucion
+        nombre: "Ejecución de sentencia"
+        ref: ejecucion_de_sentencia
+
+  sumarisimo:
+    nombre: "Proceso sumarísimo"
+    norma: "CPCCN arts. 321 y 498"
+    ambito: "Amparo contra actos de particulares, casos que la ley indique (p.ej. desalojo, interdictos), o cuando lo disponga el juez según la naturaleza de la cuestión (art. 319)."
+    mediacion: "según materia"
+    caducidad: "3 meses (art. 310 inc. 2)"
+    verificar: true
+    fases:
+      - {id: demanda, nombre: "Demanda (con toda la prueba)", actor: actor, siguiente: [traslado]}
+      - id: traslado
+        nombre: "Traslado de la demanda"
+        actor: juzgado
+        siguiente: [contestacion]
+      - id: contestacion
+        nombre: "Contestación"
+        actor: demandado
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación del traslado", norma: "CPCCN art. 498 inc. 2"}
+        notas: "No proceden excepciones de previo y especial pronunciamiento ni reconvención (art. 498 inc. 1)."
+        siguiente: [audiencia_preliminar]
+      - id: audiencia_preliminar
+        nombre: "Audiencia (art. 360)"
+        plazo: {dias: 10, tipo: habiles, desde: "contestada la demanda o vencido el plazo", norma: "CPCCN art. 498", verificar: true}
+        siguiente: [prueba]
+      - id: prueba
+        nombre: "Prueba"
+        notas: "Todos los plazos son de 3 días salvo los de contestación de demanda y apelación (art. 498). No hay alegatos (verificar)."
+        verificar: true
+        siguiente: [sentencia]
+      - id: sentencia
+        nombre: "Sentencia"
+        plazo: {dias: 15, tipo: habiles, desde: "que quedan los autos en estado", norma: "CPCCN art. 34 inc. 3", verificar: true}
+        siguiente: [apelacion]
+      - id: apelacion
+        nombre: "Apelación (en relación)"
+        plazo: {dias: 3, tipo: habiles, desde: "la notificación", norma: "CPCCN art. 498 inc. 5", verificar: true}
+        notas: "Sólo son apelables la sentencia definitiva y las resoluciones sobre medidas precautorias. Efecto devolutivo salvo gravamen irreparable. Fundar y contestar en 5 días."
+
+  juicio_ejecutivo:
+    nombre: "Juicio ejecutivo"
+    norma: "CPCCN arts. 520-596"
+    ambito: "Títulos ejecutivos del art. 523: instrumento público; privado reconocido; confesión de deuda líquida; cuenta aprobada; pagaré, cheque, letra (Dec.-Ley 5965/63, Ley 24.452); expensas (CCyCN art. 2048); alquileres (art. 524); otros por ley."
+    mediacion: "optativa para el reclamante (Ley 26.589 art. 6)"
+    caducidad: "3 meses (art. 310 inc. 2)"
+    fases:
+      - id: preparacion_via
+        nombre: "Preparación de la vía ejecutiva (si el título lo requiere)"
+        articulos: "525-529"
+        notas: "Citación a reconocer la firma bajo apercibimiento de tenerla por reconocida."
+        siguiente: [demanda]
+      - {id: demanda, nombre: "Demanda ejecutiva", actor: ejecutante, escritos: ["Demanda con el título (original o copia digital)", "Liquidación"], siguiente: [intimacion_pago]}
+      - id: intimacion_pago
+        nombre: "Mandamiento de intimación de pago y embargo"
+        articulos: "531"
+        actor: "oficial de justicia"
+        notas: "La intimación de pago importa citación para oponer excepciones."
+        siguiente: [excepciones]
+      - id: excepciones
+        nombre: "Oposición de excepciones"
+        articulos: "542, 544 (admisibles), 545 (nulidad de la ejecución)"
+        actor: ejecutado
+        plazo: {dias: 5, tipo: habiles, desde: "la intimación de pago", norma: "CPCCN art. 542"}
+        ramas:
+          - {si: "no opone excepciones", ir_a: sentencia_remate, norma: "CPCCN art. 542"}
+        siguiente: [traslado_excepciones]
+      - id: traslado_excepciones
+        nombre: "Traslado de excepciones al ejecutante"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación", norma: "CPCCN art. 547"}
+        notas: "Antes del traslado, el juez desestima sin sustanciación las excepciones no autorizadas o no opuestas en forma clara, y dicta sentencia de remate (art. 547)."
+        ramas:
+          - {si: "excepciones de puro derecho o sin prueba a producir", ir_a: sentencia_remate, norma: "CPCCN art. 548: sentencia dentro de 10 días de contestado el traslado"}
+        siguiente: [prueba]
+      - {id: prueba, nombre: "Prueba de las excepciones", articulos: "549", notas: "Plazo común fijado por el juez según las circunstancias; la carga de la prueba corresponde al ejecutado (art. 549).", siguiente: [sentencia_remate]}
+      - id: sentencia_remate
+        nombre: "Sentencia de remate"
+        articulos: "549-551"
+        notas: "Manda llevar adelante la ejecución o la rechaza."
+        siguiente: [apelacion, cumplimiento]
+      - id: apelacion
+        nombre: "Apelación"
+        articulos: "554-555"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación", norma: "CPCCN art. 244"}
+        notas: "Efecto devolutivo si el ejecutante da fianza (art. 555, verificar)."
+      - id: cumplimiento
+        nombre: "Cumplimiento: embargo y subasta"
+        articulos: "558-596"
+        siguiente: [juicio_ordinario_posterior]
+      - id: juicio_ordinario_posterior
+        nombre: "Juicio ordinario posterior"
+        articulos: "553"
+        notas: "Sólo después de cumplida la sentencia de remate."
+
+  ejecucion_de_sentencia:
+    nombre: "Ejecución de sentencia"
+    norma: "CPCCN arts. 499-519 bis"
+    ambito: "Sentencias firmes, acuerdos homologados, transacciones y conciliaciones (art. 500), laudos."
+    mediacion: excluida
+    caducidad: "no procede (art. 313 inc. 1)"
+    fases:
+      - {id: liquidacion, nombre: "Liquidación", articulos: "503", notas: "Se presenta la liquidación; traslado 5 días (verificar).", verificar: true, siguiente: [embargo]}
+      - {id: embargo, nombre: "Embargo", articulos: "502", siguiente: [citacion_venta]}
+      - id: citacion_venta
+        nombre: "Citación de venta y excepciones"
+        articulos: "505-506"
+        plazo: {dias: 5, tipo: habiles, desde: "la notificación de la citación de venta", norma: "CPCCN art. 505 (\"dentro de quinto día\")"}
+        notas: "Sólo se admiten: falsedad de la ejecutoria, prescripción de la ejecutoria, pago, quita, espera o remisión."
+        siguiente: [sentencia_remate]
+      - {id: sentencia_remate, nombre: "Resolución / sentencia de remate", articulos: "508-509", siguiente: [subasta]}
+      - {id: subasta, nombre: "Subasta", articulos: "558-596", notas: "Designación de martillero (art. 560); edictos (art. 566); saldo de precio (art. 580).", verificar: true}
+
+  medidas_cautelares:
+    nombre: "Medidas cautelares"
+    norma: "CPCCN arts. 195-237"
+    ambito: "Antes o durante el proceso: embargo preventivo (209-220), secuestro (221), intervención judicial (222-227), inhibición general (228), anotación de litis (229), prohibición de innovar (230) y de contratar (231), genéricas (232). Contra el Estado Nacional: Ley 26.854."
+    mediacion: "no requerida para la cautelar; sí para la demanda principal"
+    fases:
+      - {id: solicitud, nombre: "Solicitud", articulos: "195-199", escritos: ["Acreditar la verosimilitud del derecho y el peligro en la demora", "Ofrecer contracautela (art. 199)"], siguiente: [resolucion]}
+      - {id: resolucion, nombre: "Resolución inaudita parte", articulos: "198", notas: "Se dicta sin audiencia; apelable con efecto devolutivo.", siguiente: [traba]}
+      - {id: traba, nombre: "Traba", notas: "Oficios a registros / mandamiento.", siguiente: [notificacion, demanda_principal]}
+      - {id: notificacion, nombre: "Notificación al afectado", articulos: "198", notas: "Se notifica una vez cumplida."}
+      - id: demanda_principal
+        nombre: "Interposición de la demanda principal"
+        plazo: {dias: 10, tipo: habiles, desde: "la traba, si la obligación es exigible", norma: "CPCCN art. 207"}
+        notas: "Si no se deduce, la medida caduca de pleno derecho. Hay debate sobre si iniciar la mediación alcanza (verificar)."
+
+  beneficio_litigar_sin_gastos:
+    nombre: "Beneficio de litigar sin gastos"
+    norma: "CPCCN arts. 78-86"
+    ambito: "Incidente para eximirse de tasas y costas por carencia de recursos."
+    fases:
+      - {id: solicitud, nombre: "Solicitud", articulos: "78-79", escritos: ["Detalle de la situación patrimonial", "Ofrecimiento de prueba (al menos 3 testigos, art. 79)"], siguiente: [prueba]}
+      - {id: prueba, nombre: "Prueba con control de la contraria y del fisco", articulos: "80", siguiente: [resolucion]}
+      - {id: resolucion, nombre: "Resolución", articulos: "81", notas: "Mientras tramita, el beneficio provisional exime de gastos (art. 83)."}
+
+  diligencias_preliminares:
+    nombre: "Diligencias preliminares"
+    norma: "CPCCN arts. 323-329"
+    ambito: "Preparar el proceso: declaración jurada sobre personería, exhibición de cosas, documentos o testamento, reconocimiento de mandato, constitución de domicilio, etc."
+    mediacion: excluida
+    fases:
+      - {id: solicitud, nombre: "Solicitud", articulos: "323", siguiente: [cumplimiento]}
+      - {id: cumplimiento, nombre: "Cumplimiento", articulos: "324, 329 (incumplimiento)"}
+
+  prueba_anticipada:
+    nombre: "Prueba anticipada"
+    norma: "CPCCN arts. 326-327"
+    ambito: "Testigos de edad avanzada, enfermos o por ausentarse; reconocimiento judicial o pericial; informes; exhibición, resguardo o secuestro de documentos."
+    mediacion: excluida
+    fases:
+      - {id: solicitud, nombre: "Solicitud fundada en el riesgo de pérdida de la prueba", articulos: "326", siguiente: [produccion]}
+      - {id: produccion, nombre: "Producción con citación de la contraria (o del defensor oficial)", articulos: "327"}
+
+  desalojo:
+    nombre: "Desalojo"
+    norma: "CPCCN arts. 679-688"
+    ambito: "Contra locatarios, sublocatarios, tenedores precarios, intrusos y todo ocupante con obligación de restituir."
+    mediacion: "optativa (Ley 26.589 art. 6)"
+    notas_reforma: "Hay un proyecto 2026 de agilización de desalojos en el Congreso; estado sin verificar."
+    verificar: true
+    fases:
+      - {id: demanda, nombre: "Demanda", articulos: "679-680", notas: "Trámite sumarísimo (verificar si el juez puede ordenar el ordinario).", siguiente: [notificacion]}
+      - {id: notificacion, nombre: "Notificación con constatación de ocupantes", articulos: "684", actor: "oficial de justicia", siguiente: [contestacion]}
+      - {id: contestacion, nombre: "Contestación", plazo: {dias: 5, tipo: habiles, desde: "la notificación", norma: "CPCCN art. 498 (sumarísimo)", verificar: true}, siguiente: [sentencia]}
+      - {id: entrega_anticipada, nombre: "Entrega anticipada / desocupación inmediata (opcional)", articulos: "680 bis, 684 bis"}
+      - {id: sentencia, nombre: "Sentencia", siguiente: [lanzamiento]}
+      - {id: lanzamiento, nombre: "Lanzamiento", articulos: "686-687", notas: "Plazo de 10 días para desocupar (verificar numeración)."}
+
+  interdictos:
+    nombre: "Interdictos y acciones posesorias"
+    norma: "CPCCN arts. 606-623; CCyCN arts. 2238-2246"
+    ambito: "Adquirir (607-609), retener (610-613), recobrar (614-618), obra nueva (619-620)."
+    mediacion: excluida
+    caducidad: "Los interdictos caducan al año de producidos los hechos (art. 621)."
+    fases:
+      - {id: demanda, nombre: "Demanda", siguiente: [tramite]}
+      - {id: tramite, nombre: "Trámite sumarísimo", ref: sumarisimo}
+
+  division_condominio:
+    nombre: "División de condominio"
+    norma: "CPCCN arts. 676-678; CCyCN arts. 1997-2003"
+    ambito: "Partición de cosas en condominio."
+    fases:
+      - {id: demanda, nombre: "Demanda", notas: "Tramita por el proceso ordinario.", siguiente: [ordinario]}
+      - {id: ordinario, nombre: "Proceso ordinario", ref: ordinario}
+
+  sucesion_ab_intestato:
+    nombre: "Sucesión ab intestato"
+    norma: "CPCCN arts. 689-735; CCyCN arts. 2277-2532 (en particular 2335-2340)"
+    ambito: "Competencia: último domicilio del causante (CCyCN art. 2336)."
+    mediacion: excluida
+    caducidad: "no procede salvo incidentes (art. 313)"
+    fases:
+      - id: inicio
+        nombre: "Inicio"
+        articulos: "689-690"
+        escritos: ["Partida de defunción", "Partidas que acrediten el vínculo", "Denuncia del último domicilio y de los bienes", "Tasa de justicia"]
+        siguiente: [apertura]
+      - id: apertura
+        nombre: "Apertura y citación"
+        articulos: "699"
+        plazo: {dias: 30, tipo: corridos, desde: "la publicación del edicto (1 día en el Boletín Oficial)", norma: "CCyCN art. 2340 (edicto por un día; prevalece sobre los 3 días de edictos del CPCCN art. 699)"}
+        notas: "Cédula a los herederos denunciados; vista al Ministerio Público si hay incapaces."
+        siguiente: [declaratoria]
+      - {id: declaratoria, nombre: "Declaratoria de herederos", articulos: "700", notas: "Vencido el plazo de citación.", siguiente: [inventario]}
+      - {id: inventario, nombre: "Inventario y avalúo (o denuncia de bienes)", articulos: "716-725", siguiente: [particion]}
+      - {id: particion, nombre: "Partición (privada o judicial)", articulos: "726-728; CCyCN art. 2369", siguiente: [inscripcion]}
+      - {id: inscripcion, nombre: "Inscripción", escritos: ["Oficios/testimonios al Registro de la Propiedad Inmueble / DNRPA"]}
+
+  sucesion_testamentaria:
+    nombre: "Sucesión testamentaria"
+    norma: "CPCCN arts. 704-708; CCyCN arts. 2462 y ss."
+    mediacion: excluida
+    verificar: true
+    fases:
+      - {id: presentacion, nombre: "Presentación del testamento", notas: "Ológrafo: reconocimiento de letra y firma.", siguiente: [protocolizacion]}
+      - {id: protocolizacion, nombre: "Protocolización", siguiente: [citacion]}
+      - {id: citacion, nombre: "Citación de beneficiarios", siguiente: [aprobacion]}
+      - {id: aprobacion, nombre: "Aprobación formal del testamento", articulos: "705", siguiente: [particion]}
+      - {id: particion, nombre: "Administración y partición"}
+
+  concurso_preventivo:
+    nombre: "Concurso preventivo"
+    norma: "Ley 24.522 (LCQ)"
+    ambito: "Comercial. Plazos de 5 días supletorios, hábiles judiciales y perentorios; notificación ministerio legis como regla (art. 273)."
+    mediacion: excluida
+    fases:
+      - {id: peticion, nombre: "Petición", articulos: "LCQ 5, 11", actor: deudor, siguiente: [apertura]}
+      - {id: apertura, nombre: "Resolución de apertura", articulos: "LCQ 14", plazo: {dias: 5, tipo: habiles, desde: "la petición", norma: "LCQ art. 14"}, siguiente: [edictos]}
+      - {id: edictos, nombre: "Publicación de edictos", articulos: "LCQ 27-28", siguiente: [verificacion]}
+      - {id: verificacion, nombre: "Verificación tempestiva ante el síndico", articulos: "LCQ 32", notas: "Hasta la fecha fijada en la apertura (art. 14 inc. 3).", siguiente: [observacion]}
+      - {id: observacion, nombre: "Período de observación", plazo: {dias: 10, tipo: habiles, desde: "el vencimiento del plazo de verificación", norma: "LCQ art. 34"}, siguiente: [informe_individual]}
+      - {id: informe_individual, nombre: "Informe individual", plazo: {dias: 20, tipo: habiles, desde: "el vencimiento del período de observación", norma: "LCQ art. 35"}, siguiente: [resolucion_verificacion]}
+      - {id: resolucion_verificacion, nombre: "Resolución de verificación (art. 36)", plazo: {dias: 10, tipo: habiles, desde: "la presentación del informe individual", norma: "LCQ art. 36"}, siguiente: [categorizacion]}
+      - {id: categorizacion, nombre: "Propuesta de categorización", articulos: "LCQ 41", siguiente: [informe_general]}
+      - {id: informe_general, nombre: "Informe general", plazo: {dias: 30, tipo: habiles, desde: "la presentación del informe individual", norma: "LCQ art. 39"}, siguiente: [exclusividad]}
+      - id: exclusividad
+        nombre: "Período de exclusividad"
+        plazo: {dias: 90, tipo: habiles, desde: "la resolución de categorización (ampliable 30 días)", norma: "LCQ art. 43"}
+        notas: "Audiencia informativa 5 días antes del vencimiento (art. 45)."
+        ramas:
+          - {si: "sin conformidades", ir_a: "quiebra / cramdown", norma: "LCQ arts. 46-48"}
+        siguiente: [impugnacion]
+      - {id: impugnacion, nombre: "Impugnación del acuerdo", plazo: {dias: 5, tipo: habiles, desde: "la resolución que tiene por existente el acuerdo", norma: "LCQ art. 50"}, siguiente: [homologacion]}
+      - {id: homologacion, nombre: "Homologación", articulos: "LCQ 52", siguiente: [cumplimiento]}
+      - {id: cumplimiento, nombre: "Cumplimiento del acuerdo", articulos: "LCQ 59-63"}
+
+  quiebra:
+    nombre: "Quiebra"
+    norma: "Ley 24.522 (LCQ)"
+    mediacion: excluida
+    fases:
+      - {id: pedido, nombre: "Pedido de quiebra", articulos: "LCQ 77-84", actor: "acreedor o deudor", notas: "Pedido por acreedor: citación al deudor por 5 días (art. 84).", siguiente: [sentencia]}
+      - {id: sentencia, nombre: "Sentencia de quiebra", articulos: "LCQ 88", siguiente: [reposicion, incautacion]}
+      - {id: reposicion, nombre: "Recurso de reposición", plazo: {dias: 5, tipo: habiles, desde: "el conocimiento de la sentencia", norma: "LCQ art. 94"}}
+      - {id: incautacion, nombre: "Incautación", articulos: "LCQ 177", siguiente: [verificacion]}
+      - {id: verificacion, nombre: "Verificación de créditos", articulos: "LCQ 200", siguiente: [liquidacion]}
+      - {id: liquidacion, nombre: "Liquidación", articulos: "LCQ 203-217", siguiente: [distribucion]}
+      - {id: distribucion, nombre: "Distribución", articulos: "LCQ 218-224", siguiente: [clausura]}
+      - {id: clausura, nombre: "Clausura", articulos: "LCQ 230-233"}
+
+practica:
+  organos: "Juzgados Nacionales en lo Civil (CABA) — Cámara Nacional de Apelaciones en lo Civil; Juzgados Nacionales en lo Comercial — CNCom; Juzgados Civiles y Comerciales Federales."
+  mesa_general_de_entradas: "Cada Cámara recibe las demandas y los formularios de mediación, asigna juzgado por sorteo electrónico y controla la conexidad."
+  sistema: "Lex100 (gestión PJN): expediente digital, escritos con firma electrónica, notificaciones electrónicas, consulta de causas (scw.pjn.gov.ar)."
+  caratula: "Expte. N° xxxx/aaaa — 'ACTOR c/ DEMANDADO s/ OBJETO'."
+  cedulas: "Electrónicas: las confecciona y firma el letrado en el Portal. Papel (domicilio real, traslado de demanda): Dirección General de Notificaciones."
+  mandamientos: "Intimación de pago, embargo, lanzamiento y secuestro: Oficina de Mandamientos (oficial de justicia)."
+  oficios: "Firmados por el letrado (art. 400); a organismos por DEOX (Acordada 15/2020); a extraña jurisdicción, Ley 22.172."
+  tasas: "Tasa de justicia Ley 23.898 (3%); bono/derecho fijo CPACF (Ley 23.187)."
+  digital: "Desde la Acordada 4/2020 las presentaciones son exclusivamente digitales."
